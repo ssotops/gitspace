@@ -1,17 +1,14 @@
-# Which repositories to clone
 repositories {
-  # Create symlinks
   gitspace {
     path = "gs"
   }
   clone {
-    # Remote source
-    scm = "github"
-    # owner
+    scm = "github.com"
     owner = "ssotspace"
-    # List of suffixes to include
-    endsWith = [
-      "space"
-    ]
+    endsWith = ["space"]
+    auth {
+      type = "ssh"
+      keyPath = "~/.ssh/alechp"
+    }
   }
 }
