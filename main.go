@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/progress"
+	// "github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
@@ -119,13 +119,13 @@ func main() {
 	}
 
 	// Clone repositories with progress bar
-	prog := progress.New(progress.WithDefaultGradient())
+	// prog := progress.New(progress.WithDefaultGradient())
 	cloneResults := make(map[string]error)
 	symlinkedRepos := make([]string, 0)
 
 	boldStyle := lipgloss.NewStyle().Bold(true)
 
-	for i, repo := range filteredRepos {
+	for _, repo := range filteredRepos {
 		fmt.Printf("%s\n", boldStyle.Render(fmt.Sprintf("Cloning %s...", repo)))
 		_, err := git.PlainClone(filepath.Join(repoDir, repo), false, &git.CloneOptions{
 			URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo),
@@ -133,8 +133,11 @@ func main() {
 			Auth:     sshAuth,
 		})
 		cloneResults[repo] = err
-		prog.SetPercent(float64(i+1) / float64(len(filteredRepos)))
-		fmt.Print(prog.View())
+		if err == nil {
+			fmt.Println(boldStyle.Render("Clone successful"))
+		} else {
+			fmt.Println(boldStyle.Render("Clone failed"))
+		}
 		fmt.Println() // Add a newline after each clone operation
 	}
 
@@ -169,38 +172,63 @@ func printSummaryTable(config Config, cloneResults map[string]error, repoDir, ba
 	repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
 	statusStyle := lipgloss.NewStyle().Width(10).Align(lipgloss.Left)
 	urlStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
+	errorStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
 
 	// Print table header
-	fmt.Printf("%s %s %s\n",
+	fmt.Printf("%s %s %s %s\n",
 		repoStyle.Render("📁 Repository"),
 		statusStyle.Render("✅ Status"),
-		urlStyle.Render("🔗 URL"))
-	
-	fmt.Println(strings.Repeat("-", 80)) // Separator line
+		urlStyle.Render("🔗 URL"),
+		errorStyle.Render("❌ Error"))
+
+	fmt.Println(strings.Repeat("-", 130)) // Separator line
 
 	// Print table rows
 	for repo, err := range cloneResults {
 		status := "Success"
+		errorMsg := "-"
 		if err != nil {
 			status = "Failed"
+			errorMsg = err.Error()
 		}
-		fmt.Printf("%s %s %s\n",
+		fmt.Printf("%s %s %s %s\n",
 			repoStyle.Render(repo),
 			statusStyle.Render(status),
-			urlStyle.Render(fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)))
+			urlStyle.Render(fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)),
+			errorStyle.Render(errorMsg))
 	}
 
-	// Only print symlinked repositories if there are any
+	// Print symlinked repositories table
 	if len(symlinkedRepos) > 0 {
 		fmt.Println()
 		fmt.Println(headerStyle.Render("Symlinked repositories:"))
+		fmt.Println() // Add a newline after the header
+
+		// Define column styles for symlink table
+		repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
+		symlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+		pathStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+
+		// Print table header
+		fmt.Printf("%s %s %s\n",
+			repoStyle.Render("📁 Repository"),
+			symlinkStyle.Render("🔗 Symlink Path"),
+			pathStyle.Render("📂 Repository Path"))
+
+		fmt.Println(strings.Repeat("-", 80)) // Separator line
+
+		// Print table rows
 		for _, repo := range symlinkedRepos {
-			fmt.Printf("  📁 %s -> %s\n", repo, filepath.Join(baseDir, repo))
+			fmt.Printf("%s %s %s\n",
+				repoStyle.Render(repo),
+				symlinkStyle.Render(filepath.Join(baseDir, repo)),
+				pathStyle.Render(filepath.Join(repoDir, repo)))
 		}
 	}
 
 	fmt.Println()
 	fmt.Println(headerStyle.Render("Summary of changes:"))
+	fmt.Println() // Add a newline after the header
 	totalAttempted := len(cloneResults)
 	successfulClones := len(symlinkedRepos)
 	fmt.Printf("  Total repositories attempted: %d\n", totalAttempted)
