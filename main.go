@@ -163,49 +163,48 @@ func main() {
 func printSummaryTable(config Config, cloneResults map[string]error, repoDir, baseDir string, symlinkedRepos []string) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	fmt.Println(headerStyle.Render("\nCloning and symlinking summary:"))
+	fmt.Println() // Add a newline after the header
 
 	// Define column styles
 	repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
 	statusStyle := lipgloss.NewStyle().Width(10).Align(lipgloss.Left)
 	urlStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
-	errorStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
 
 	// Print table header
-	fmt.Printf("%s %s %s %s\n",
+	fmt.Printf("%s %s %s\n",
 		repoStyle.Render("📁 Repository"),
 		statusStyle.Render("✅ Status"),
-		urlStyle.Render("🔗 URL"),
-		errorStyle.Render("❌ Error"))
-
-	fmt.Println(strings.Repeat("-", 130)) // Separator line
+		urlStyle.Render("🔗 URL"))
+	
+	fmt.Println(strings.Repeat("-", 80)) // Separator line
 
 	// Print table rows
 	for repo, err := range cloneResults {
 		status := "Success"
-		errorMsg := "-"
 		if err != nil {
 			status = "Failed"
-			errorMsg = err.Error()
 		}
-		fmt.Printf("%s %s %s %s\n",
+		fmt.Printf("%s %s %s\n",
 			repoStyle.Render(repo),
 			statusStyle.Render(status),
-			urlStyle.Render(fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)),
-			errorStyle.Render(errorMsg))
+			urlStyle.Render(fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)))
 	}
 
 	// Only print symlinked repositories if there are any
 	if len(symlinkedRepos) > 0 {
-		fmt.Println("\nSymlinked repositories:")
+		fmt.Println()
+		fmt.Println(headerStyle.Render("Symlinked repositories:"))
 		for _, repo := range symlinkedRepos {
-			fmt.Printf("  - %s -> %s\n", repo, filepath.Join(baseDir, repo))
+			fmt.Printf("  📁 %s -> %s\n", repo, filepath.Join(baseDir, repo))
 		}
 	}
 
-	fmt.Printf("\nSummary of changes:\n")
-	fmt.Printf("  Total repositories attempted: %d\n", len(cloneResults))
-	fmt.Printf("  Successfully cloned: %d\n", len(symlinkedRepos))
-	fmt.Printf("  Failed to clone: %d\n", len(cloneResults)-len(symlinkedRepos))
+	fmt.Println()
+	fmt.Println(headerStyle.Render("Summary of changes:"))
+	totalAttempted := len(cloneResults)
+	successfulClones := len(symlinkedRepos)
+	fmt.Printf("  Total repositories attempted: %d\n", totalAttempted)
+	fmt.Printf("  Successfully cloned: %d/%d\n", successfulClones, totalAttempted)
 }
 
 func getRepositories(scm, owner string) ([]string, error) {
