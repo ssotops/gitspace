@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	"github.com/mitchellh/go-homedir"
+	"github.com/ssotspace/gitspace/lib"
 )
 
 // Config represents the structure of our HCL configuration file
@@ -86,15 +87,36 @@ func main() {
 		return
 	}
 
+	// Check for GitHub token
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		logger.Error("GITHUB_TOKEN environment variable not set. Please set it and try again.")
+		return
+	}
+
+	// Log the configuration
+	logger.Info("Configuration loaded",
+		"scm", config.Repositories.Clone.SCM,
+		"owner", config.Repositories.Clone.Owner,
+		"endsWith", config.Repositories.Clone.EndsWith)
+
 	// Get list of repositories to clone
-	repos, err := getRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	repos, err := lib.GetRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
 	if err != nil {
 		logger.Error("Error fetching repositories", "error", err)
 		return
 	}
 
+	logger.Info("Fetched repositories", "count", len(repos), "repos", repos)
+
 	// Filter repositories based on endsWith criteria
 	filteredRepos := filterRepositories(repos, config.Repositories.Clone.EndsWith)
+
+	logger.Info("Filtered repositories", "count", len(filteredRepos), "repos", filteredRepos)
+
+	if len(filteredRepos) == 0 {
+		logger.Warn("No repositories match the filter criteria")
+		return
+	}
 
 	// Clone repositories with progress bar
 	prog := progress.New(progress.WithDefaultGradient())
@@ -154,7 +176,7 @@ func printSummaryTable(config Config, cloneResults map[string]error, repoDir, ba
 		statusStyle.Render("✅ Status"),
 		urlStyle.Render("🔗 URL"),
 		errorStyle.Render("❌ Error"))
-	
+
 	fmt.Println(strings.Repeat("-", 130)) // Separator line
 
 	// Print table rows
