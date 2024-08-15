@@ -98,75 +98,92 @@ func main() {
 
 	// Clone repositories with progress bar
 	prog := progress.New(progress.WithDefaultGradient())
-	clonedRepos := make([]string, 0)
+	cloneResults := make(map[string]error)
 	symlinkedRepos := make([]string, 0)
 
+	boldStyle := lipgloss.NewStyle().Bold(true)
+
 	for i, repo := range filteredRepos {
-		fmt.Printf("Cloning %s...\n", repo)
+		fmt.Printf("%s\n", boldStyle.Render(fmt.Sprintf("Cloning %s...", repo)))
 		_, err := git.PlainClone(filepath.Join(repoDir, repo), false, &git.CloneOptions{
 			URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo),
 			Progress: os.Stdout,
 			Auth:     sshAuth,
 		})
-		if err != nil {
-			logger.Error("Error cloning repository", "repo", repo, "error", err)
-		} else {
-			clonedRepos = append(clonedRepos, repo)
-		}
+		cloneResults[repo] = err
 		prog.SetPercent(float64(i+1) / float64(len(filteredRepos)))
 		fmt.Print(prog.View())
+		fmt.Println() // Add a newline after each clone operation
 	}
-	fmt.Println() // Add a newline after the progress bar
 
 	// Create symlinks
-	for _, repo := range clonedRepos {
-		source := filepath.Join(".repositories", repo)
-		target := filepath.Join(baseDir, repo)
+	for repo, err := range cloneResults {
+		if err == nil {
+			source := filepath.Join(".repositories", repo)
+			target := filepath.Join(baseDir, repo)
 
-		// Remove existing symlink if it exists
-		os.Remove(target)
+			// Remove existing symlink if it exists
+			os.Remove(target)
 
-		err := os.Symlink(source, target)
-		if err != nil {
-			logger.Error("Error creating symlink", "repo", repo, "error", err)
-		} else {
-			symlinkedRepos = append(symlinkedRepos, repo)
+			err := os.Symlink(source, target)
+			if err != nil {
+				logger.Error("Error creating symlink", "repo", repo, "error", err)
+			} else {
+				symlinkedRepos = append(symlinkedRepos, repo)
+			}
 		}
 	}
 
 	// Print summary table
-	printSummaryTable(config, clonedRepos, repoDir, baseDir)
+	printSummaryTable(config, cloneResults, repoDir, baseDir, symlinkedRepos)
 }
 
-func printSummaryTable(config Config, clonedRepos []string, repoDir, baseDir string) {
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	fmt.Println(style.Render("\nCloning and symlinking summary:"))
+func printSummaryTable(config Config, cloneResults map[string]error, repoDir, baseDir string, symlinkedRepos []string) {
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+	fmt.Println(headerStyle.Render("\nCloning and symlinking summary:"))
 
 	// Define column styles
 	repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
+	statusStyle := lipgloss.NewStyle().Width(10).Align(lipgloss.Left)
 	urlStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
-	pathStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-	symlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+	errorStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
 
 	// Print table header
 	fmt.Printf("%s %s %s %s\n",
-		repoStyle.Render("Repository"),
-		urlStyle.Render("URL"),
-		pathStyle.Render("Cloned Path"),
-		symlinkStyle.Render("Symlink"))
+		repoStyle.Render("📁 Repository"),
+		statusStyle.Render("✅ Status"),
+		urlStyle.Render("🔗 URL"),
+		errorStyle.Render("❌ Error"))
 	
 	fmt.Println(strings.Repeat("-", 130)) // Separator line
 
 	// Print table rows
-	for _, repo := range clonedRepos {
+	for repo, err := range cloneResults {
+		status := "Success"
+		errorMsg := "-"
+		if err != nil {
+			status = "Failed"
+			errorMsg = err.Error()
+		}
 		fmt.Printf("%s %s %s %s\n",
 			repoStyle.Render(repo),
+			statusStyle.Render(status),
 			urlStyle.Render(fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)),
-			pathStyle.Render(filepath.Join(repoDir, repo)),
-			symlinkStyle.Render(filepath.Join(baseDir, repo)))
+			errorStyle.Render(errorMsg))
 	}
 
-	fmt.Printf("\nTotal repositories cloned and symlinked: %d\n", len(clonedRepos))
+	// Only print symlinked repositories if there are any
+	if len(symlinkedRepos) > 0 {
+		fmt.Println("\nSymlinked repositories:")
+		for _, repo := range symlinkedRepos {
+			fmt.Printf("  - %s -> %s\n", repo, filepath.Join(baseDir, repo))
+		}
+	}
+
+	fmt.Printf("\nSummary of changes:\n")
+	fmt.Printf("  Total repositories attempted: %d\n", len(cloneResults))
+	fmt.Printf("  Successfully cloned: %d\n", len(symlinkedRepos))
+	fmt.Printf("  Failed to clone: %d\n", len(cloneResults)-len(symlinkedRepos))
 }
 
 func getRepositories(scm, owner string) ([]string, error) {
