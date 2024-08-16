@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+  "github.com/Masterminds/semver/v3"
 	"dagger.io/dagger"
 	"github.com/google/go-github/v39/github"
 	"golang.org/x/oauth2"
@@ -90,9 +91,29 @@ func createGitHubRelease(ctx context.Context) error {
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
 
+	// Fetch the latest release
+	latestRelease, _, err := client.Repositories.GetLatestRelease(ctx, "ssotops", "gitspace")
+	if err != nil && err.(*github.ErrorResponse).Response.StatusCode != 404 {
+		return fmt.Errorf("failed to fetch latest release: %v", err)
+	}
+
+	var newVersion string
+	if latestRelease == nil || latestRelease.TagName == nil {
+		// If there's no release yet, start with v1.0.0
+		newVersion = "v1.0.0"
+	} else {
+		// Parse the latest version and increment the patch number
+		v, err := semver.NewVersion(*latestRelease.TagName)
+		if err != nil {
+			return fmt.Errorf("failed to parse latest version: %v", err)
+		}
+		newVersion = fmt.Sprintf("v%d.%d.%d", v.Major(), v.Minor(), v.Patch()+1)
+	}
+
+	// Create the new release
 	release, _, err := client.Repositories.CreateRelease(ctx, "ssotops", "gitspace", &github.RepositoryRelease{
-		TagName:    github.String("v1.0.0"),
-		Name:       github.String("Release v1.0.0"),
+		TagName:    github.String(newVersion),
+		Name:       github.String(fmt.Sprintf("Release %s", newVersion)),
 		Body:       github.String("Description of the release"),
 		Draft:      github.Bool(false),
 		Prerelease: github.Bool(false),
@@ -133,6 +154,6 @@ func createGitHubRelease(ctx context.Context) error {
 		}
 	}
 
-	fmt.Printf("Release created: %s\n", *release.HTMLURL)
+	fmt.Printf("Release %s created: %s\n", newVersion, *release.HTMLURL)
 	return nil
 }
