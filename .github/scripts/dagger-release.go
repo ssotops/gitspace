@@ -48,6 +48,7 @@ func publishRelease(ctx context.Context) error {
 
 	// If tests pass, create a GitHub release
 	if _, err := test.Sync(ctx); err == nil {
+		fmt.Println("Tests passed. Creating GitHub release...")
 		if err := createGitHubRelease(ctx); err != nil {
 			return fmt.Errorf("failed to create GitHub release: %v", err)
 		}
@@ -70,7 +71,7 @@ func createGitHubRelease(ctx context.Context) error {
 	client := github.NewClient(tc)
 
 	// Create the release
-	release, _, err := client.Repositories.CreateRelease(ctx, "ssotspace", "gitspace", &github.RepositoryRelease{
+	release, resp, err := client.Repositories.CreateRelease(ctx, "ssotspace", "gitspace", &github.RepositoryRelease{
 		TagName: github.String("v1.0.0"), // You might want to dynamically generate this
 		Name:    github.String("Release v1.0.0"),
 		Body:    github.String("Description of the release"),
@@ -79,7 +80,11 @@ func createGitHubRelease(ctx context.Context) error {
 	})
 
 	if err != nil {
-		return err
+		if resp != nil {
+			fmt.Printf("GitHub API response status: %s\n", resp.Status)
+			fmt.Printf("GitHub API response body: %s\n", resp.Body)
+		}
+		return fmt.Errorf("GitHub API error: %v", err)
 	}
 
 	fmt.Printf("Release created: %s\n", *release.HTMLURL)
