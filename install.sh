@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 # Determine OS and architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
@@ -22,30 +24,49 @@ esac
 REPO="ssotops/gitspace"
 BINARY="gitspace"
 
-# Determine latest release
-RELEASE_URL="https://api.github.com/repos/$REPO/releases/latest"
-DOWNLOAD_URL=$(curl -s $RELEASE_URL | grep "browser_download_url.*${BINARY}_${OS}_${ARCH}" | cut -d '"' -f 4)
+# Fetch the latest release information
+echo "Fetching latest release information..."
+RELEASE_INFO=$(curl -s "https://api.github.com/repos/$REPO/releases/latest")
 
-if [ -z "$DOWNLOAD_URL" ]; then
-    echo "Failed to find download URL for ${OS}_${ARCH}"
+# Extract the tag name (version) and release ID
+VERSION=$(echo "$RELEASE_INFO" | grep -m 1 '"tag_name":' | cut -d'"' -f4)
+RELEASE_ID=$(echo "$RELEASE_INFO" | grep -m 1 '"id":' | cut -d':' -f2 | tr -d ' ,')
+
+if [ -z "$VERSION" ] || [ -z "$RELEASE_ID" ]; then
+    echo "Failed to fetch latest release information"
     exit 1
 fi
 
+echo "Latest version: $VERSION"
+
+# Construct the download URL for the specific asset
+ASSET_NAME="${BINARY}_${OS}_${ARCH}"
+if [ "$OS" = "windows" ]; then
+    ASSET_NAME="${ASSET_NAME}.exe"
+fi
+
+DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET_NAME"
+
 # Download the binary
-echo "Downloading $BINARY..."
-curl -L $DOWNLOAD_URL -o $BINARY
+echo "Downloading $BINARY $VERSION for ${OS}_${ARCH}..."
+curl -L -o "$BINARY" "$DOWNLOAD_URL"
+
+if [ $? -ne 0 ]; then
+    echo "Failed to download $BINARY"
+    exit 1
+fi
 
 # Make it executable (skip for Windows)
 if [ "$OS" != "windows" ]; then
-    chmod +x $BINARY
+    chmod +x "$BINARY"
 fi
 
 # Move to a directory in PATH
 if [ "$OS" = "windows" ]; then
-    mv $BINARY $BINARY.exe
-    echo "Please move $BINARY.exe to a directory in your PATH"
+    mv "$BINARY" "${BINARY}.exe"
+    echo "Please move ${BINARY}.exe to a directory in your PATH"
 else
-    sudo mv $BINARY /usr/local/bin/
+    sudo mv "$BINARY" /usr/local/bin/
 fi
 
-echo "$BINARY has been installed successfully!"
+echo "$BINARY $VERSION has been installed successfully!"

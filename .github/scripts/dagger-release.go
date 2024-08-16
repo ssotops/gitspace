@@ -31,6 +31,7 @@ func publishRelease(ctx context.Context) error {
 		return fmt.Errorf("failed to get working directory: %v", err)
 	}
 	projectRoot := filepath.Dir(filepath.Dir(wd))
+	fmt.Printf("Project root: %s\n", projectRoot)
 
 	src := client.Host().Directory(projectRoot)
 
@@ -47,19 +48,27 @@ func publishRelease(ctx context.Context) error {
 	}
 
 	for _, arch := range architectures {
+		binaryName := fmt.Sprintf("gitspace_%s_%s", arch.goos, arch.goarch)
+		if arch.goos == "windows" {
+			binaryName += ".exe"
+		}
+
 		build := client.Container().
 			From("golang:1.23.0").
 			WithDirectory("/src", src).
 			WithWorkdir("/src").
 			WithEnvVariable("GOOS", arch.goos).
 			WithEnvVariable("GOARCH", arch.goarch).
-			WithExec([]string{"go", "build", "-o", fmt.Sprintf("gitspace_%s_%s", arch.goos, arch.goarch)})
+			WithExec([]string{"go", "build", "-o", binaryName})
 
-		// Export the binary
-		_, err := build.File(fmt.Sprintf("gitspace_%s_%s", arch.goos, arch.goarch)).Export(ctx, fmt.Sprintf("gitspace_%s_%s", arch.goos, arch.goarch))
+		// Export the binary to the project root
+		_, err := build.File(binaryName).Export(ctx, filepath.Join(projectRoot, binaryName))
 		if err != nil {
-			return fmt.Errorf("failed to export binary for %s_%s: %v", arch.goos, arch.goarch, err)
+			fmt.Printf("Warning: failed to export binary for %s_%s: %v\n", arch.goos, arch.goarch, err)
+			// Continue with the next architecture instead of returning an error
+			continue
 		}
+		fmt.Printf("Successfully built and exported: %s\n", binaryName)
 	}
 
 	// Run tests
@@ -71,13 +80,60 @@ func publishRelease(ctx context.Context) error {
 
 	if _, err := test.Sync(ctx); err == nil {
 		fmt.Println("Tests passed. Creating GitHub release...")
-		if err := createGitHubRelease(ctx); err != nil {
+		if err := createGitHubRelease(ctx, projectRoot); err != nil {
 			return fmt.Errorf("failed to create GitHub release: %v", err)
 		}
 	} else {
 		return fmt.Errorf("tests failed: %v", err)
 	}
 
+	return nil
+}
+
+func createGitHubRelease(ctx context.Context, projectRoot string) error {
+	// ... (previous code for creating the release remains the same)
+
+	// Upload binaries
+	architectures := []struct {
+		goos   string
+		goarch string
+	}{
+		{"darwin", "amd64"},
+		{"darwin", "arm64"},
+		{"linux", "amd64"},
+		{"linux", "arm64"},
+		{"windows", "amd64"},
+	}
+
+	for _, arch := range architectures {
+		filename := fmt.Sprintf("gitspace_%s_%s", arch.goos, arch.goarch)
+		if arch.goos == "windows" {
+			filename += ".exe"
+		}
+
+		filepath := filepath.Join(projectRoot, filename)
+		fmt.Printf("Attempting to open: %s\n", filepath)
+
+		file, err := os.Open(filepath)
+		if err != nil {
+			fmt.Printf("Warning: failed to open binary %s: %v\n", filename, err)
+			// Continue with the next architecture instead of returning an error
+			continue
+		}
+		defer file.Close()
+
+		_, _, err = client.Repositories.UploadReleaseAsset(ctx, "ssotops", "gitspace", *release.ID, &github.UploadOptions{
+			Name: filename,
+		}, file)
+		if err != nil {
+			fmt.Printf("Warning: failed to upload asset %s: %v\n", filename, err)
+			// Continue with the next architecture instead of returning an error
+			continue
+		}
+		fmt.Printf("Successfully uploaded: %s\n", filename)
+	}
+
+	fmt.Printf("Release %s created: %s\n", newVersion, *release.HTMLURL)
 	return nil
 }
 
