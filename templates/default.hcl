@@ -4,10 +4,11 @@ repositories {
   }
   clone {
     scm = "github.com"
-    owner = "ssotspace"
+    owner = "ssotops"
     endsWith = ["space"]
     auth {
       type = "ssh"
+      # update this to your ssh key path
       keyPath = "~/.ssh/alechp"
     }
   }
