@@ -1,0 +1,34 @@
+# File: .github/workflows/release.yaml
+
+name: Dagger Release Workflow
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  dagger-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.17
+
+      - name: Install Dagger
+        run: |
+          curl -L https://dl.dagger.io/dagger/install.sh | sh
+          sudo mv bin/dagger /usr/local/bin
+          dagger version
+
+      - name: Run Dagger workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd .github/scripts
+          go run dagger-release.go
