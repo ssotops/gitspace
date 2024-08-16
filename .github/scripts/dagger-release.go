@@ -1,5 +1,3 @@
-// File: .github/scripts/dagger-release.go
-
 package main
 
 import (
@@ -27,12 +25,12 @@ func publishRelease(ctx context.Context) error {
 	}
 	defer client.Close()
 
-	// Get the project root directory (two levels up from the script location)
-	src := client.Host().Directory("../..")
+	// Get the project root directory
+	src := client.Host().Directory(".")
 
 	// Build the project
 	build := client.Container().
-		From("golang:1.17").
+		From("golang:1.23.0").  // Updated to use the latest stable Go version
 		WithDirectory("/src", src).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "build", "-o", "gitspace"})
@@ -64,7 +62,7 @@ func createGitHubRelease(ctx context.Context) error {
 	client := github.NewClient(tc)
 
 	// Create the release
-	release, _, err := client.Repositories.CreateRelease(ctx, "owner", "gitspace", &github.RepositoryRelease{
+	release, _, err := client.Repositories.CreateRelease(ctx, "ssotspace", "gitspace", &github.RepositoryRelease{
 		TagName: github.String("v1.0.0"), // You might want to dynamically generate this
 		Name:    github.String("Release v1.0.0"),
 		Body:    github.String("Description of the release"),
