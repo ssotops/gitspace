@@ -8,6 +8,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/google/go-github/v39/github"
 	"golang.org/x/oauth2"
+	"github.com/ssotspace/gitspace"  // Import your main package
 )
 
 func main() {
@@ -26,11 +27,11 @@ func publishRelease(ctx context.Context) error {
 	defer client.Close()
 
 	// Get the project root directory
-	src := client.Host().Directory(".")
+	src := client.Host().Directory("../..")
 
 	// Build the project
 	build := client.Container().
-		From("golang:1.23.0").  // Updated to use the latest stable Go version
+		From("golang:1.23.0").
 		WithDirectory("/src", src).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "build", "-o", "gitspace"})

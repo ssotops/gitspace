@@ -24,7 +24,7 @@ jobs:
           sudo mv bin/dagger /usr/local/bin
           dagger version
 
-      - name: Update go.mod
+      - name: Update go.mod and install dependencies
         run: |
           go mod edit -go=1.23
           go get dagger.io/dagger@latest
@@ -33,4 +33,11 @@ jobs:
       - name: Run Dagger workflow
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: go run .github/scripts/dagger-release.go
+        run: |
+          cd .github/scripts
+          go mod init dagger-release
+          go mod edit -replace github.com/ssotspace/gitspace=../..
+          go get github.com/ssotspace/gitspace
+          go get dagger.io/dagger@latest
+          go mod tidy
+          go run dagger-release.go
