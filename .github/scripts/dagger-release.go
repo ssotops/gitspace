@@ -1,3 +1,5 @@
+// File: .github/scripts/dagger-release.go
+
 package main
 
 import (
@@ -8,7 +10,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/google/go-github/v39/github"
 	"golang.org/x/oauth2"
-	"github.com/ssotspace/gitspace"  // Import your main package
 )
 
 func main() {
