@@ -1,11 +1,10 @@
-// File: .github/scripts/dagger-release.go
-
 package main
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"dagger.io/dagger"
 	"github.com/google/go-github/v39/github"
@@ -27,8 +26,15 @@ func publishRelease(ctx context.Context) error {
 	}
 	defer client.Close()
 
+	// Get the absolute path of the project root directory
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %v", err)
+	}
+	projectRoot := filepath.Dir(filepath.Dir(wd)) // Go up two levels from the scripts directory
+
 	// Get the project root directory
-	src := client.Host().Directory("../..")
+	src := client.Host().Directory(projectRoot)
 
 	// Build the project
 	build := client.Container().
