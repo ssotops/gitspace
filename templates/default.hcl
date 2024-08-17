@@ -5,10 +5,17 @@ repositories {
   clone {
     scm = "github.com"
     owner = "ssotops"
-    startsWith = ["git"]
+    # repositories starting with "git"
+    # startsWith = ["git"]
+
+    # repositories ending with "space"
     endsWith = ["space"]
-    includes = ["sso"]
-    name = ["gitspace", "ssotspace"]
+
+    # repositories containing "sso"
+    # includes = ["sso"]
+
+    # repositories named "gitspace" or "ssotspace"
+    # name = ["gitspace", "ssotspace"]
     auth {
       type = "ssh"
       keyPath = "~/.ssh/alechp"
