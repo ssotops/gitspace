@@ -47,26 +47,30 @@ fi
 
 DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET_NAME"
 
+# Create a temporary file for downloading
+TEMP_FILE=$(mktemp)
+
 # Download the binary
 echo "Downloading $BINARY $VERSION for ${OS}_${ARCH}..."
-curl -L -o "$BINARY" "$DOWNLOAD_URL"
-
-if [ $? -ne 0 ]; then
+if curl -L -o "$TEMP_FILE" "$DOWNLOAD_URL"; then
+    echo "Download completed successfully."
+else
     echo "Failed to download $BINARY"
+    rm -f "$TEMP_FILE"
     exit 1
 fi
 
 # Make it executable (skip for Windows)
 if [ "$OS" != "windows" ]; then
-    chmod +x "$BINARY"
+    chmod +x "$TEMP_FILE"
 fi
 
 # Move to a directory in PATH
 if [ "$OS" = "windows" ]; then
-    mv "$BINARY" "${BINARY}.exe"
+    mv "$TEMP_FILE" "${BINARY}.exe"
     echo "Please move ${BINARY}.exe to a directory in your PATH"
 else
-    sudo mv "$BINARY" /usr/local/bin/
+    sudo mv "$TEMP_FILE" "/usr/local/bin/$BINARY"
 fi
 
 echo "$BINARY $VERSION has been installed successfully!"
