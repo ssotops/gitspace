@@ -24,10 +24,13 @@ type Config struct {
 			Path string `hcl:"path"`
 		} `hcl:"gitspace,block"`
 		Clone *struct {
-			SCM      string   `hcl:"scm"`
-			Owner    string   `hcl:"owner"`
-			EndsWith []string `hcl:"endsWith"`
-			Auth     *struct {
+			SCM        string   `hcl:"scm"`
+			Owner      string   `hcl:"owner"`
+			EndsWith   []string `hcl:"endsWith,optional"`
+			StartsWith []string `hcl:"startsWith,optional"`
+			Includes   []string `hcl:"includes,optional"`
+			Names      []string `hcl:"name,optional"`
+			Auth       *struct {
 				Type    string `hcl:"type"`
 				KeyPath string `hcl:"keyPath"`
 			} `hcl:"auth,block"`
@@ -108,8 +111,8 @@ func main() {
 
 	logger.Info("Fetched repositories", "count", len(repos), "repos", repos)
 
-	// Filter repositories based on endsWith criteria
-	filteredRepos := filterRepositories(repos, config.Repositories.Clone.EndsWith)
+	// Filter repositories based on criteria
+	filteredRepos := filterRepositories(repos, &config) // Pass the entire config
 
 	logger.Info("Filtered repositories", "count", len(filteredRepos), "repos", filteredRepos)
 
@@ -241,15 +244,59 @@ func getRepositories(scm, owner string) ([]string, error) {
 	return []string{"GitSpace", "SSOTSpace", "K1Space", "SCMany"}, nil
 }
 
-func filterRepositories(repos []string, endsWith []string) []string {
+func filterRepositories(repos []string, config *Config) []string {
 	var filtered []string
+	cloneConfig := config.Repositories.Clone
+
 	for _, repo := range repos {
-		for _, suffix := range endsWith {
-			if strings.HasSuffix(strings.ToLower(repo), strings.ToLower(suffix)) {
-				filtered = append(filtered, repo)
-				break
+		// Check exact names
+		if len(cloneConfig.Names) > 0 {
+			for _, name := range cloneConfig.Names {
+				if strings.EqualFold(repo, name) {
+					filtered = append(filtered, repo)
+					goto nextRepo
+				}
 			}
 		}
+
+		// Check startsWith
+		if len(cloneConfig.StartsWith) > 0 {
+			for _, prefix := range cloneConfig.StartsWith {
+				if strings.HasPrefix(strings.ToLower(repo), strings.ToLower(prefix)) {
+					filtered = append(filtered, repo)
+					goto nextRepo
+				}
+			}
+		}
+
+		// Check endsWith
+		if len(cloneConfig.EndsWith) > 0 {
+			for _, suffix := range cloneConfig.EndsWith {
+				if strings.HasSuffix(strings.ToLower(repo), strings.ToLower(suffix)) {
+					filtered = append(filtered, repo)
+					goto nextRepo
+				}
+			}
+		}
+
+		// Check includes
+		if len(cloneConfig.Includes) > 0 {
+			for _, substr := range cloneConfig.Includes {
+				if strings.Contains(strings.ToLower(repo), strings.ToLower(substr)) {
+					filtered = append(filtered, repo)
+					goto nextRepo
+				}
+			}
+		}
+
+		// If no filters are specified, include all repositories
+		if len(cloneConfig.Names) == 0 && len(cloneConfig.StartsWith) == 0 &&
+			len(cloneConfig.EndsWith) == 0 && len(cloneConfig.Includes) == 0 {
+			filtered = append(filtered, repo)
+		}
+
+	nextRepo:
 	}
+
 	return filtered
 }
