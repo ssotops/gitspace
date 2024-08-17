@@ -63,7 +63,7 @@ repositories {
     # name = ["gitspace", "ssotspace"]
     auth {
       type = "ssh"
-      keyPath = "~/.ssh/alechp"
+      keyPath = "~/.ssh/my-key"
     }
   }
 }
