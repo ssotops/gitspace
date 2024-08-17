@@ -1,18 +1,18 @@
-# GitSpace
+# gitspace
 
-GitSpace is a CLI tool designed to manage and organize your git repositories efficiently.
+gitspace is a CLI tool designed to manage and organize your git repositories efficiently.
 
 ## Installation
 
 ### Quick Install
 
-To quickly install GitSpace, you can use our install script:
+To quickly install gitspace, you can use our install script:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/ssotops/gitspace/main/install.sh | bash
 ```
 
-This script will automatically download and install the latest version of GitSpace.
+This script will automatically download and install the latest version of gitspace.
 
 ### Manual Installation
 
@@ -25,20 +25,20 @@ If you prefer to install manually:
 
 ## Uninstallation
 
-To uninstall GitSpace, you can use our uninstall script:
+To uninstall gitspace, you can use our uninstall script:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/ssotops/gitspace/main/uninstall.sh | bash
 ```
 
-This script will remove GitSpace and its configuration files.
+This script will remove gitspace and its configuration files.
 
 For manual uninstallation:
 
-1. Remove the GitSpace executable from your PATH.
+1. Remove the gitspace executable from your PATH.
 2. Optionally, remove the configuration directory (usually `~/.gitspace`).
 
-## Getting Started with GitSpace
+## Getting Started with gitspace
 
 1. Create a configuration file named `gs.hcl` in your project directory with the following content:
 
@@ -65,18 +65,18 @@ repositories {
    export GITHUB_TOKEN=your_github_token_here
    ```
 
-3. Run GitSpace:
+3. Run gitspace:
    ```bash
    gitspace
    ```
 
 4. Follow the prompts to specify the path to your config file (or press Enter to use the default `./gs.hcl`).
 
-5. GitSpace will clone the repositories matching your configuration and create symlinks.
+5. gitspace will clone the repositories matching your configuration and create symlinks.
 
 ## Configuration Explanation
 
-- `path`: The base directory where GitSpace will create symlinks to your cloned repositories.
+- `path`: The base directory where gitspace will create symlinks to your cloned repositories.
 - `scm`: The source control management system (e.g., "github.com").
 - `owner`: The GitHub organization or user owning the repositories.
 - `endsWith`: Filters repositories to clone based on their name endings.
