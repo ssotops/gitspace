@@ -22,7 +22,7 @@ repositories {
     name = ["scmany"]
     auth {
       type = "ssh"
-      keyPath = "~/.ssh/my-key"
+      keyPath = "$SSOT_KEY"
     }
   }
 }

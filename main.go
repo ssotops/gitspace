@@ -38,6 +38,18 @@ type Config struct {
 	} `hcl:"repositories,block"`
 }
 
+func getSSHKeyPath(configPath string) (string, error) {
+	if strings.HasPrefix(configPath, "$") {
+		envVar := strings.TrimPrefix(configPath, "$")
+		path := os.Getenv(envVar)
+		if path == "" {
+			return "", fmt.Errorf("environment variable %s is not set", envVar)
+		}
+		return path, nil
+	}
+	return configPath, nil
+}
+
 func main() {
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportCaller:    true,
@@ -79,7 +91,12 @@ func main() {
 	}
 
 	// Setup SSH auth
-	sshKeyPath, err := homedir.Expand(config.Repositories.Clone.Auth.KeyPath)
+	sshKeyPath, err := getSSHKeyPath(config.Repositories.Clone.Auth.KeyPath)
+	if err != nil {
+		logger.Error("Error getting SSH key path", "error", err)
+		return
+	}
+	sshKeyPath, err = homedir.Expand(sshKeyPath)
 	if err != nil {
 		logger.Error("Error expanding SSH key path", "error", err)
 		return
