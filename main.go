@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	// "github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
@@ -82,9 +81,37 @@ func main() {
 		return
 	}
 
+	// Create a menu for user to choose an action
+	var choice string
+	err = huh.NewSelect[string]().
+		Title("Choose an action").
+		Options(
+			huh.NewOption("Clone Repositories", "clone"),
+			huh.NewOption("Upgrade Gitspace", "upgrade"),
+		).
+		Value(&choice).
+		Run()
+
+	if err != nil {
+		logger.Error("Error getting user choice", "error", err)
+		return
+	}
+
+	switch choice {
+	case "clone":
+		cloneRepositories(logger, &config)
+	case "upgrade":
+		upgradeGitspace(logger)
+	default:
+		logger.Error("Invalid choice")
+	}
+}
+
+func cloneRepositories(logger *log.Logger, config *Config) {
+	// This function will contain most of the original main() function logic
 	baseDir := config.Repositories.GitSpace.Path
 	repoDir := filepath.Join(baseDir, ".repositories")
-	err = os.MkdirAll(repoDir, 0755)
+	err := os.MkdirAll(repoDir, 0755)
 	if err != nil {
 		logger.Error("Error creating directories", "error", err)
 		return
@@ -129,7 +156,7 @@ func main() {
 	logger.Info("Fetched repositories", "count", len(repos), "repos", repos)
 
 	// Filter repositories based on criteria
-	filteredRepos := filterRepositories(repos, &config) // Pass the entire config
+	filteredRepos := filterRepositories(repos, config)
 
 	logger.Info("Filtered repositories", "count", len(filteredRepos), "repos", filteredRepos)
 
@@ -139,7 +166,6 @@ func main() {
 	}
 
 	// Clone repositories with progress bar
-	// prog := progress.New(progress.WithDefaultGradient())
 	cloneResults := make(map[string]error)
 	symlinkedRepos := make([]string, 0)
 
@@ -183,7 +209,14 @@ func main() {
 	printSummaryTable(config, cloneResults, repoDir, baseDir, symlinkedRepos)
 }
 
-func printSummaryTable(config Config, cloneResults map[string]error, repoDir, baseDir string, symlinkedRepos []string) {
+func upgradeGitspace(logger *log.Logger) {
+	// Implement the upgrade logic here
+	logger.Info("Upgrading Gitspace...")
+	// Add your upgrade logic here
+	logger.Info("Gitspace upgrade completed")
+}
+
+func printSummaryTable(config *Config, cloneResults map[string]error, repoDir, baseDir string, symlinkedRepos []string) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	fmt.Println(headerStyle.Render("\nCloning and symlinking summary:"))
 	fmt.Println() // Add a newline after the header
