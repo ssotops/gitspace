@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
-	// "github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
@@ -82,9 +85,37 @@ func main() {
 		return
 	}
 
+	// Create a menu for user to choose an action
+	var choice string
+	err = huh.NewSelect[string]().
+		Title("Choose an action").
+		Options(
+			huh.NewOption("Clone Repositories", "clone"),
+			huh.NewOption("Upgrade Gitspace", "upgrade"),
+		).
+		Value(&choice).
+		Run()
+
+	if err != nil {
+		logger.Error("Error getting user choice", "error", err)
+		return
+	}
+
+	switch choice {
+	case "clone":
+		cloneRepositories(logger, &config)
+	case "upgrade":
+		upgradeGitspace(logger)
+	default:
+		logger.Error("Invalid choice")
+	}
+}
+
+func cloneRepositories(logger *log.Logger, config *Config) {
+	// This function will contain most of the original main() function logic
 	baseDir := config.Repositories.GitSpace.Path
 	repoDir := filepath.Join(baseDir, ".repositories")
-	err = os.MkdirAll(repoDir, 0755)
+	err := os.MkdirAll(repoDir, 0755)
 	if err != nil {
 		logger.Error("Error creating directories", "error", err)
 		return
@@ -129,7 +160,7 @@ func main() {
 	logger.Info("Fetched repositories", "count", len(repos), "repos", repos)
 
 	// Filter repositories based on criteria
-	filteredRepos := filterRepositories(repos, &config) // Pass the entire config
+	filteredRepos := filterRepositories(repos, config)
 
 	logger.Info("Filtered repositories", "count", len(filteredRepos), "repos", filteredRepos)
 
@@ -139,7 +170,6 @@ func main() {
 	}
 
 	// Clone repositories with progress bar
-	// prog := progress.New(progress.WithDefaultGradient())
 	cloneResults := make(map[string]error)
 	symlinkedRepos := make([]string, 0)
 
@@ -183,7 +213,119 @@ func main() {
 	printSummaryTable(config, cloneResults, repoDir, baseDir, symlinkedRepos)
 }
 
-func printSummaryTable(config Config, cloneResults map[string]error, repoDir, baseDir string, symlinkedRepos []string) {
+func upgradeGitspace(logger *log.Logger) {
+	logger.Info("Upgrading Gitspace...")
+
+	// Define repository details
+	repo := "ssotops/gitspace"
+	binary := "gitspace"
+
+	// Determine OS and architecture
+	osName := runtime.GOOS
+	arch := runtime.GOARCH
+
+	// Fetch the latest release information
+	logger.Info("Fetching latest release information...")
+	releaseInfo, err := fetchLatestReleaseInfo(repo)
+	if err != nil {
+		logger.Error("Failed to fetch latest release information", "error", err)
+		return
+	}
+
+	version := releaseInfo.TagName
+	logger.Info("Latest version", "version", version)
+
+	// Construct the download URL for the specific asset
+	assetName := fmt.Sprintf("%s_%s_%s", binary, osName, arch)
+	if osName == "windows" {
+		assetName += ".exe"
+	}
+	downloadURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repo, version, assetName)
+
+	// Download the binary
+	logger.Info("Downloading new version", "version", version, "os", osName, "arch", arch)
+	tempFile, err := downloadBinary(downloadURL)
+	if err != nil {
+		logger.Error("Failed to download binary", "error", err)
+		return
+	}
+	defer os.Remove(tempFile)
+
+	// Make it executable (skip for Windows)
+	if osName != "windows" {
+		err = os.Chmod(tempFile, 0755)
+		if err != nil {
+			logger.Error("Failed to make binary executable", "error", err)
+			return
+		}
+	}
+
+	// Get the path of the current executable
+	execPath, err := os.Executable()
+	if err != nil {
+		logger.Error("Failed to get current executable path", "error", err)
+		return
+	}
+
+	// Replace the current binary with the new one
+	err = os.Rename(tempFile, execPath)
+	if err != nil {
+		logger.Error("Failed to replace current binary", "error", err)
+		return
+	}
+
+	logger.Info("Gitspace has been successfully upgraded!", "version", version)
+}
+
+type ReleaseInfo struct {
+	TagName string `json:"tag_name"`
+	ID      int    `json:"id"`
+}
+
+func fetchLatestReleaseInfo(repo string) (*ReleaseInfo, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var releaseInfo ReleaseInfo
+	err = json.Unmarshal(body, &releaseInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	return &releaseInfo, nil
+}
+
+func downloadBinary(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	tempFile, err := os.CreateTemp("", "gitspace-*")
+	if err != nil {
+		return "", err
+	}
+	defer tempFile.Close()
+
+	_, err = io.Copy(tempFile, resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return tempFile.Name(), nil
+}
+
+func printSummaryTable(config *Config, cloneResults map[string]error, repoDir, baseDir string, symlinkedRepos []string) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	fmt.Println(headerStyle.Render("\nCloning and symlinking summary:"))
 	fmt.Println() // Add a newline after the header
