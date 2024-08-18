@@ -6,15 +6,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/google/go-github/v39/github"
 	"github.com/charmbracelet/log"
+	"github.com/google/go-github/v39/github"
 	"golang.org/x/oauth2"
 )
 
 func FetchGitHubRepositories(owner string) ([]string, error) {
 	ctx := context.Background()
-	
+
 	// Use GitHub token for authentication
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
@@ -73,3 +74,36 @@ func GetRepositories(scm, owner string) ([]string, error) {
 		return nil, fmt.Errorf("unsupported SCM: %s", scm)
 	}
 }
+
+func AddLabelsToRepository(owner, repo string, labels []string) error {
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	client := github.NewClient(tc)
+
+	for _, label := range labels {
+		_, _, err := client.Issues.CreateLabel(ctx, owner, repo, &github.Label{Name: &label})
+		if err != nil {
+			// If the label already exists, ignore the error
+			if strings.Contains(err.Error(), "already_exists") {
+				log.Info("Label already exists", "repo", repo, "label", label)
+				continue
+			}
+			return fmt.Errorf("error creating label %s for %s/%s: %v", label, owner, repo, err)
+		}
+		log.Info("Label created successfully", "repo", repo, "label", label)
+	}
+
+	return nil
+}
+
+// func splitOwnerRepo(fullName string) (string, string) {
+// 	parts := strings.Split(fullName, "/")
+// 	if len(parts) == 2 {
+// 		return parts[0], parts[1]
+// 	}
+// 	return "", fullName
+// }
