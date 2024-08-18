@@ -22,7 +22,7 @@ repositories {
     name = ["scmany"]
     auth {
       type = "ssh"
-      keyPath = "~/.ssh/alechp"
+      keyPath = "~/.ssh/my-key"
     }
   }
 }

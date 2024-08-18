@@ -51,16 +51,20 @@ repositories {
     scm = "github.com"
     owner = "ssotops"
     # repositories starting with "git"
-    # startsWith = ["git"]
+    # eg. github.com/ssotops/gitspace
+    startsWith = ["git"]
 
-    # repositories ending with "space"
+    # repositories ending with "space", 
+    # eg. github.com/ssotops/gitspace, github.com/ssotops/k1space, github.com/ssotops/ssotspace
     endsWith = ["space"]
 
-    # repositories containing "sso"
-    # includes = ["sso"]
+    # repositories containing 
+    # eg. github.com/ssotops/ssotspace
+    includes = ["sso"]
 
-    # repositories named "gitspace" or "ssotspace"
-    # name = ["gitspace", "ssotspace"]
+    # repositories named "scmany"
+    # eg. github.com/ssotops/scmany
+    name = ["scmany"]
     auth {
       type = "ssh"
       keyPath = "~/.ssh/my-key"
