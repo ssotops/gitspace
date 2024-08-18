@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+  "os/exec"
 	"path/filepath"
 	"runtime"
   "runtime/debug"
@@ -20,6 +21,8 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/ssotspace/gitspace/lib"
 )
+
+var Version string
 
 // Config represents the structure of our HCL configuration file
 type Config struct {
@@ -481,14 +484,48 @@ func filterRepositories(repos []string, config *Config) []string {
 }
 
 func getCurrentVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "unknown"
+	// Check if Version is set (injected during build)
+	if Version != "" {
+		return Version
 	}
-	for _, setting := range info.Settings {
-		if setting.Key == "vcs.revision" {
-			return setting.Value[:7] // Return first 7 characters of the git commit hash
+
+	// Try to get the git commit hash
+	hash, err := getGitCommitHash()
+	if err == nil && hash != "" {
+		return hash[:7] // Return first 7 characters of the git commit hash
+	}
+
+	// If git commit hash is not available, try to get it from build info
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" {
+				return setting.Value[:7] // Return first 7 characters of the git commit hash
+			}
 		}
 	}
+
+	// If all else fails, return "unknown"
 	return "unknown"
+}
+
+func getGitCommitHash() (string, error) {
+	// Try using git command
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	output, err := cmd.Output()
+	if err == nil {
+		return strings.TrimSpace(string(output)), nil
+	}
+
+	// If git command fails, try using go-git
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		return "", err
+	}
+
+	ref, err := repo.Head()
+	if err != nil {
+		return "", err
+	}
+
+	return ref.Hash().String(), nil
 }
