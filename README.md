@@ -93,9 +93,48 @@ repositories {
 - `scm`: The source control management system (e.g., "github.com").
 - `owner`: The GitHub organization or user owning the repositories.
 - `auth`: Specifies the authentication method (SSH in this case) and the path to your SSH key.
+  - `keyPath`: Can be either a direct path to your SSH key (e.g., "~/.ssh/my-key") or an environment variable name prefixed with "$" (e.g., "$SSH_KEY_PATH"). If an environment variable is used, gitspace will read the key path from that variable.
 - `endsWith`: Filters repositories to clone based on their name endings (eg. `space` will match `gitspace`).
 - `startsWith`: Filters repositories to clone based on their name prefixes (eg. `git` will match `gitspace`).
-- `includes`: Filters repositories to clone based on their name endings (eg. `sot` will match `.
+- `includes`: Filters repositories to clone based on substrings in their names (eg. `sot` will match `ssotspace`).
+- `name`: Filters repositories to clone based on exact name matches.
+
+## Example Configuration
+
+```hcl
+repositories {
+  gitspace {
+    path = "gs"
+  }
+  clone {
+    scm = "github.com"
+    owner = "ssotops"
+    startsWith = ["git"]
+    endsWith = ["space"]
+    includes = ["sso"]
+    name = ["scmany"]
+    auth {
+      type = "ssh"
+      keyPath = "$SSH_KEY_PATH"  # This will read the SSH key path from the SSH_KEY_PATH environment variable
+    }
+  }
+}
+```
+
+In this example, the SSH key path is set to `$SSH_KEY_PATH`. Before running gitspace, you would set this environment variable:
+
+```bash
+export SSH_KEY_PATH=~/.ssh/my-github-key
+```
+
+Alternatively, you could specify the path directly in the configuration:
+
+```hcl
+auth {
+  type = "ssh"
+  keyPath = "~/.ssh/my-github-key"
+}
+```
 
 ## Features
 
