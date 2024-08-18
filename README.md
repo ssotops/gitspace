@@ -88,16 +88,16 @@ repositories {
 - `path`: The base directory where gitspace will create symlinks to your cloned repositories.
 - `scm`: The source control management system (e.g., "github.com").
 - `owner`: The GitHub organization or user owning the repositories.
-- `endsWith`: Filters repositories to clone based on their name endings.
 - `auth`: Specifies the authentication method (SSH in this case) and the path to your SSH key.
+- `endsWith`: Filters repositories to clone based on their name endings (eg. `space` will match `gitspace`).
+- `startsWith`: Filters repositories to clone based on their name prefixes (eg. `git` will match `gitspace`).
+- `includes`: Filters repositories to clone based on their name endings (eg. `sot` will match `.
 
 ## Features
 
 - Clones multiple repositories based on specified criteria.
 - Creates symlinks for easy access to cloned repositories.
 - Provides a summary of cloning and symlinking operations.
-
-For more detailed information, please refer to the [documentation](link_to_your_documentation).
 
 ## Support
 
