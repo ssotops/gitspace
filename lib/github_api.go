@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+  "strings"
 
 	"github.com/google/go-github/v39/github"
 	"github.com/charmbracelet/log"
@@ -72,4 +73,27 @@ func GetRepositories(scm, owner string) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unsupported SCM: %s", scm)
 	}
+}
+
+func AddLabelsToRepository(repo string, labels []string) error {
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	client := github.NewClient(tc)
+
+	owner, repoName := splitOwnerRepo(repo)
+
+	_, _, err := client.Issues.AddLabelsToIssue(ctx, owner, repoName, 0, labels)
+	return err
+}
+
+func splitOwnerRepo(fullName string) (string, string) {
+	parts := strings.Split(fullName, "/")
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "", fullName
 }

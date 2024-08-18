@@ -6,10 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-  "os/exec"
+	"os/exec"
 	"path/filepath"
 	"runtime"
-  "runtime/debug"
+	"runtime/debug"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -17,7 +17,9 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/hashicorp/hcl/v2/hclsimple"
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/gohcl"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/mitchellh/go-homedir"
 	"github.com/ssotspace/gitspace/lib"
 )
@@ -26,23 +28,35 @@ var Version string
 
 // Config represents the structure of our HCL configuration file
 type Config struct {
+	Variables *struct {
+		RepositoryTypes map[string]string `hcl:"repository_types,optional"`
+	} `hcl:"variable,block"`
 	Repositories *struct {
 		GitSpace *struct {
 			Path string `hcl:"path"`
 		} `hcl:"gitspace,block"`
-		Clone *struct {
-			SCM        string   `hcl:"scm"`
-			Owner      string   `hcl:"owner"`
-			EndsWith   []string `hcl:"endsWith,optional"`
-			StartsWith []string `hcl:"startsWith,optional"`
-			Includes   []string `hcl:"includes,optional"`
-			Names      []string `hcl:"name,optional"`
+		Labels []string `hcl:"labels,optional"`
+		Clone  *struct {
+			SCM        string      `hcl:"scm"`
+			Owner      string      `hcl:"owner"`
+			EndsWith   interface{} `hcl:"endsWith"`
+			StartsWith interface{} `hcl:"startsWith"`
+			Includes   interface{} `hcl:"includes"`
+			Names      interface{} `hcl:"name"`
 			Auth       *struct {
 				Type    string `hcl:"type"`
 				KeyPath string `hcl:"keyPath"`
 			} `hcl:"auth,block"`
 		} `hcl:"clone,block"`
 	} `hcl:"repositories,block"`
+}
+
+type FilterConfig struct {
+	Values     []string `hcl:"values,optional"`
+	Repository *struct {
+		Type   string   `hcl:"type,optional"`
+		Labels []string `hcl:"labels,optional"`
+	} `hcl:"repository,block"`
 }
 
 func getSSHKeyPath(configPath string) (string, error) {
@@ -101,8 +115,7 @@ func main() {
 	}
 
 	// Parse the HCL config file
-	var config Config
-	err = hclsimple.DecodeFile(configPath, nil, &config)
+	config, err := decodeHCLFile(configPath)
 	if err != nil {
 		logger.Error("Error parsing config file", "error", err)
 		return
@@ -114,6 +127,7 @@ func main() {
 		Title("Choose an action").
 		Options(
 			huh.NewOption("Clone Repositories", "clone"),
+			huh.NewOption("Sync Labels", "sync"),
 			huh.NewOption("Upgrade Gitspace", "upgrade"),
 		).
 		Value(&choice).
@@ -127,6 +141,8 @@ func main() {
 	switch choice {
 	case "clone":
 		cloneRepositories(logger, &config)
+	case "sync":
+		syncLabels(logger, &config)
 	case "upgrade":
 		upgradeGitspace(logger)
 	default:
@@ -168,10 +184,10 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 	}
 
 	// Log the configuration
+	// Log the configuration
 	logger.Info("Configuration loaded",
 		"scm", config.Repositories.Clone.SCM,
-		"owner", config.Repositories.Clone.Owner,
-		"endsWith", config.Repositories.Clone.EndsWith)
+		"owner", config.Repositories.Clone.Owner)
 
 	// Get list of repositories to clone
 	repos, err := lib.GetRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
@@ -420,67 +436,69 @@ func printSummaryTable(config *Config, cloneResults map[string]error, repoDir, b
 	fmt.Printf("  Successfully cloned: %d/%d\n", successfulClones, totalAttempted)
 }
 
-func getRepositories(scm, owner string) ([]string, error) {
-	// This is a placeholder. In a real implementation, you would
-	// fetch the list of repositories from the SCM (e.g., using GitHub API)
-	return []string{"GitSpace", "SSOTSpace", "K1Space", "SCMany"}, nil
-}
-
 func filterRepositories(repos []string, config *Config) []string {
 	var filtered []string
 	cloneConfig := config.Repositories.Clone
 
 	for _, repo := range repos {
 		// Check exact names
-		if len(cloneConfig.Names) > 0 {
-			for _, name := range cloneConfig.Names {
-				if strings.EqualFold(repo, name) {
-					filtered = append(filtered, repo)
-					goto nextRepo
-				}
-			}
+		if matchesFilter(repo, cloneConfig.Names) {
+			filtered = append(filtered, repo)
+			continue
 		}
 
 		// Check startsWith
-		if len(cloneConfig.StartsWith) > 0 {
-			for _, prefix := range cloneConfig.StartsWith {
-				if strings.HasPrefix(strings.ToLower(repo), strings.ToLower(prefix)) {
-					filtered = append(filtered, repo)
-					goto nextRepo
-				}
-			}
+		if matchesFilter(repo, cloneConfig.StartsWith) {
+			filtered = append(filtered, repo)
+			continue
 		}
 
 		// Check endsWith
-		if len(cloneConfig.EndsWith) > 0 {
-			for _, suffix := range cloneConfig.EndsWith {
-				if strings.HasSuffix(strings.ToLower(repo), strings.ToLower(suffix)) {
-					filtered = append(filtered, repo)
-					goto nextRepo
-				}
-			}
+		if matchesFilter(repo, cloneConfig.EndsWith) {
+			filtered = append(filtered, repo)
+			continue
 		}
 
 		// Check includes
-		if len(cloneConfig.Includes) > 0 {
-			for _, substr := range cloneConfig.Includes {
-				if strings.Contains(strings.ToLower(repo), strings.ToLower(substr)) {
-					filtered = append(filtered, repo)
-					goto nextRepo
-				}
-			}
+		if matchesFilter(repo, cloneConfig.Includes) {
+			filtered = append(filtered, repo)
+			continue
 		}
 
 		// If no filters are specified, include all repositories
-		if len(cloneConfig.Names) == 0 && len(cloneConfig.StartsWith) == 0 &&
-			len(cloneConfig.EndsWith) == 0 && len(cloneConfig.Includes) == 0 {
+		if cloneConfig.Names == nil && cloneConfig.StartsWith == nil &&
+			cloneConfig.EndsWith == nil && cloneConfig.Includes == nil {
 			filtered = append(filtered, repo)
 		}
-
-	nextRepo:
 	}
 
 	return filtered
+}
+
+func matchesFilter(repo string, filter interface{}) bool {
+	if filter == nil {
+		return false
+	}
+
+	var values []string
+	switch f := filter.(type) {
+	case FilterConfig:
+		values = f.Values
+	case []string:
+		values = f
+	default:
+		return false
+	}
+
+	for _, value := range values {
+		if strings.HasPrefix(strings.ToLower(repo), strings.ToLower(value)) ||
+			strings.HasSuffix(strings.ToLower(repo), strings.ToLower(value)) ||
+			strings.Contains(strings.ToLower(repo), strings.ToLower(value)) ||
+			repo == value {
+			return true
+		}
+	}
+	return false
 }
 
 func getCurrentVersion() string {
@@ -528,4 +546,118 @@ func getGitCommitHash() (string, error) {
 	}
 
 	return ref.Hash().String(), nil
+}
+
+func syncLabels(logger *log.Logger, config *Config) {
+	// Fetch repositories
+	repos, err := lib.GetRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	if err != nil {
+		logger.Error("Error fetching repositories", "error", err)
+		return
+	}
+
+	// Calculate label changes
+	changes := calculateLabelChanges(repos, config)
+
+	// Print summary of changes
+	printLabelChangeSummary(changes)
+
+	// Prompt for confirmation
+	confirmed := confirmChanges()
+	if !confirmed {
+		logger.Info("Label sync cancelled by user")
+		return
+	}
+
+	// Apply changes
+	applyLabelChanges(changes, logger)
+}
+
+func calculateLabelChanges(repos []string, config *Config) map[string][]string {
+	changes := make(map[string][]string)
+
+	for _, repo := range repos {
+		changes[repo] = append(changes[repo], config.Repositories.Labels...)
+
+		// Check each filter and add corresponding labels
+		changes[repo] = append(changes[repo], getLabelsIfMatch(repo, config.Repositories.Clone.StartsWith)...)
+		changes[repo] = append(changes[repo], getLabelsIfMatch(repo, config.Repositories.Clone.EndsWith)...)
+		changes[repo] = append(changes[repo], getLabelsIfMatch(repo, config.Repositories.Clone.Includes)...)
+		changes[repo] = append(changes[repo], getLabelsIfMatch(repo, config.Repositories.Clone.Names)...)
+	}
+
+	return changes
+}
+
+func getLabelsIfMatch(repo string, filter interface{}) []string {
+	if matchesFilter(repo, filter) {
+		if fc, ok := filter.(FilterConfig); ok && fc.Repository != nil {
+			return fc.Repository.Labels
+		}
+	}
+	return []string{}
+}
+
+func printLabelChangeSummary(changes map[string][]string) {
+	fmt.Println("Label Sync Summary:")
+	for repo, labels := range changes {
+		fmt.Printf("%s:\n", repo)
+		for _, label := range labels {
+			fmt.Printf("  + %s\n", label)
+		}
+		fmt.Println()
+	}
+}
+
+func confirmChanges() bool {
+	var confirm string
+	fmt.Print("Do you want to apply these changes? (yes/no): ")
+	fmt.Scanln(&confirm)
+	return strings.ToLower(confirm) == "yes" || strings.ToLower(confirm) == "y"
+}
+
+func applyLabelChanges(changes map[string][]string, logger *log.Logger) {
+	for repo, labels := range changes {
+		err := lib.AddLabelsToRepository(repo, labels)
+		if err != nil {
+			logger.Error("Error applying labels to repository", "repo", repo, "error", err)
+		} else {
+			logger.Info("Labels applied successfully", "repo", repo, "labels", labels)
+		}
+	}
+}
+
+func decodeHCLFile(filename string) (Config, error) {
+	src, err := os.ReadFile(filename)
+	if err != nil {
+		return Config{}, err
+	}
+
+	file, diags := hclsyntax.ParseConfig(src, filename, hcl.Pos{Line: 1, Column: 1})
+	if diags.HasErrors() {
+		return Config{}, fmt.Errorf("failed to parse HCL: %s", diags.Error())
+	}
+
+	var config Config
+	decodeDiags := gohcl.DecodeBody(file.Body, nil, &config)
+	if decodeDiags.HasErrors() {
+		return Config{}, fmt.Errorf("failed to decode HCL: %s", decodeDiags.Error())
+	}
+
+	// Handle old format for filter configs
+	handleOldFormat := func(v interface{}) interface{} {
+		if slice, ok := v.([]string); ok {
+			return FilterConfig{Values: slice}
+		}
+		return v
+	}
+
+	if config.Repositories != nil && config.Repositories.Clone != nil {
+		config.Repositories.Clone.EndsWith = handleOldFormat(config.Repositories.Clone.EndsWith)
+		config.Repositories.Clone.StartsWith = handleOldFormat(config.Repositories.Clone.StartsWith)
+		config.Repositories.Clone.Includes = handleOldFormat(config.Repositories.Clone.Includes)
+		config.Repositories.Clone.Names = handleOldFormat(config.Repositories.Clone.Names)
+	}
+
+	return config, nil
 }
