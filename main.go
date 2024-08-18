@@ -557,7 +557,7 @@ func syncLabels(logger *log.Logger, config *Config) {
 	}
 
 	// Apply changes
-	applyLabelChanges(changes, logger)
+	applyLabelChanges(changes, logger, config.Repositories.Clone.Owner)
 }
 
 func calculateLabelChanges(repos []string, config *Config) map[string][]string {
@@ -635,9 +635,9 @@ func confirmChanges() bool {
 	return confirmed
 }
 
-func applyLabelChanges(changes map[string][]string, logger *log.Logger) {
+func applyLabelChanges(changes map[string][]string, logger *log.Logger, owner string) {
 	for repo, labels := range changes {
-		err := lib.AddLabelsToRepository(repo, labels)
+		err := lib.AddLabelsToRepository(owner, repo, labels)
 		if err != nil {
 			logger.Error("Error applying labels to repository", "repo", repo, "error", err)
 		} else {
