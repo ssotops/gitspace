@@ -1,13 +1,3 @@
-variable "repository_types" {
-  type = map(string)
-  default = {
-    gitops   = "gitops"
-    solution = "solution"
-    helper   = "helper"
-    ssot     = "ssot"
-  }
-}
-
 repositories {
   gitspace {
     path = "gs"
@@ -20,7 +10,7 @@ repositories {
     startsWith {
       values = ["git"]
       repository {
-        type = var.repository_types.gitops
+        type = "gitops"
         labels = ["backend", "core"]
       }
     }
@@ -28,7 +18,7 @@ repositories {
     endsWith {
       values = ["space"]
       repository {
-        type = var.repository_types.solution
+        type = "solution"
         labels = ["frontend", "experimental"]
       }
     }
@@ -36,7 +26,7 @@ repositories {
     includes {
       values = ["sso"]
       repository {
-        type = var.repository_types.ssot
+        type = "ssot"
         labels = ["auth", "security"]
       }
     }
@@ -44,7 +34,7 @@ repositories {
     name {
       values = ["scmany"]
       repository {
-        type = var.repository_types.helper
+        type = "helper"
         labels = ["utility"]
       }
     }

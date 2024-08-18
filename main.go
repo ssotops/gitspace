@@ -28,21 +28,18 @@ var Version string
 
 // Config represents the structure of our HCL configuration file
 type Config struct {
-	Variables *struct {
-		RepositoryTypes map[string]string `hcl:"repository_types,optional"`
-	} `hcl:"variable,block"`
 	Repositories *struct {
 		GitSpace *struct {
 			Path string `hcl:"path"`
 		} `hcl:"gitspace,block"`
 		Labels []string `hcl:"labels,optional"`
 		Clone  *struct {
-			SCM        string      `hcl:"scm"`
-			Owner      string      `hcl:"owner"`
-			EndsWith   interface{} `hcl:"endsWith"`
-			StartsWith interface{} `hcl:"startsWith"`
-			Includes   interface{} `hcl:"includes"`
-			Names      interface{} `hcl:"name"`
+			SCM        string        `hcl:"scm"`
+			Owner      string        `hcl:"owner"`
+			EndsWith   *FilterConfig `hcl:"endsWith,block"`
+			StartsWith *FilterConfig `hcl:"startsWith,block"`
+			Includes   *FilterConfig `hcl:"includes,block"`
+			Names      *FilterConfig `hcl:"name,block"`
 			Auth       *struct {
 				Type    string `hcl:"type"`
 				KeyPath string `hcl:"keyPath"`
@@ -52,10 +49,10 @@ type Config struct {
 }
 
 type FilterConfig struct {
-	Values     []string `hcl:"values,optional"`
+	Values     []string `hcl:"values"`
 	Repository *struct {
-		Type   string   `hcl:"type,optional"`
-		Labels []string `hcl:"labels,optional"`
+		Type   string   `hcl:"type"`
+		Labels []string `hcl:"labels"`
 	} `hcl:"repository,block"`
 }
 
@@ -75,6 +72,7 @@ func main() {
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
+		Level:           log.DebugLevel, // Set to DebugLevel to see all logs
 	})
 
 	// Create styles for the welcome message
@@ -475,22 +473,11 @@ func filterRepositories(repos []string, config *Config) []string {
 	return filtered
 }
 
-func matchesFilter(repo string, filter interface{}) bool {
-	if filter == nil {
+func matchesFilter(repo string, filter *FilterConfig) bool {
+	if filter == nil || len(filter.Values) == 0 {
 		return false
 	}
-
-	var values []string
-	switch f := filter.(type) {
-	case FilterConfig:
-		values = f.Values
-	case []string:
-		values = f
-	default:
-		return false
-	}
-
-	for _, value := range values {
+	for _, value := range filter.Values {
 		if strings.HasPrefix(strings.ToLower(repo), strings.ToLower(value)) ||
 			strings.HasSuffix(strings.ToLower(repo), strings.ToLower(value)) ||
 			strings.Contains(strings.ToLower(repo), strings.ToLower(value)) ||
@@ -577,25 +564,49 @@ func calculateLabelChanges(repos []string, config *Config) map[string][]string {
 	changes := make(map[string][]string)
 
 	for _, repo := range repos {
+		// Add global labels
 		changes[repo] = append(changes[repo], config.Repositories.Labels...)
 
 		// Check each filter and add corresponding labels
-		changes[repo] = append(changes[repo], getLabelsIfMatch(repo, config.Repositories.Clone.StartsWith)...)
-		changes[repo] = append(changes[repo], getLabelsIfMatch(repo, config.Repositories.Clone.EndsWith)...)
-		changes[repo] = append(changes[repo], getLabelsIfMatch(repo, config.Repositories.Clone.Includes)...)
-		changes[repo] = append(changes[repo], getLabelsIfMatch(repo, config.Repositories.Clone.Names)...)
+		if config.Repositories.Clone != nil {
+			if matchesFilter(repo, config.Repositories.Clone.StartsWith) {
+				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.StartsWith)...)
+			}
+			if matchesFilter(repo, config.Repositories.Clone.EndsWith) {
+				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.EndsWith)...)
+			}
+			if matchesFilter(repo, config.Repositories.Clone.Includes) {
+				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.Includes)...)
+			}
+			if matchesFilter(repo, config.Repositories.Clone.Names) {
+				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.Names)...)
+			}
+		}
+
+		// Remove duplicates
+		changes[repo] = removeDuplicates(changes[repo])
 	}
 
 	return changes
 }
 
-func getLabelsIfMatch(repo string, filter interface{}) []string {
-	if matchesFilter(repo, filter) {
-		if fc, ok := filter.(FilterConfig); ok && fc.Repository != nil {
-			return fc.Repository.Labels
-		}
+func getLabelsFromFilter(filter *FilterConfig) []string {
+	if filter != nil && filter.Repository != nil {
+		return filter.Repository.Labels
 	}
 	return []string{}
+}
+
+func removeDuplicates(slice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, entry := range slice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
 }
 
 func printLabelChangeSummary(changes map[string][]string) {
@@ -610,10 +621,18 @@ func printLabelChangeSummary(changes map[string][]string) {
 }
 
 func confirmChanges() bool {
-	var confirm string
-	fmt.Print("Do you want to apply these changes? (yes/no): ")
-	fmt.Scanln(&confirm)
-	return strings.ToLower(confirm) == "yes" || strings.ToLower(confirm) == "y"
+	var confirmed bool
+	err := huh.NewConfirm().
+		Title("Do you want to apply these changes?").
+		Value(&confirmed).
+		Run()
+
+	if err != nil {
+		fmt.Println("Error getting confirmation:", err)
+		return false
+	}
+
+	return confirmed
 }
 
 func applyLabelChanges(changes map[string][]string, logger *log.Logger) {
@@ -628,36 +647,124 @@ func applyLabelChanges(changes map[string][]string, logger *log.Logger) {
 }
 
 func decodeHCLFile(filename string) (Config, error) {
+	logger := log.New(os.Stderr)
+	logger.SetLevel(log.DebugLevel)
+
+	logger.Debug("Reading file", "filename", filename)
 	src, err := os.ReadFile(filename)
 	if err != nil {
+		logger.Error("Failed to read file", "error", err)
 		return Config{}, err
 	}
 
+	logger.Debug("Parsing HCL config")
 	file, diags := hclsyntax.ParseConfig(src, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
-		return Config{}, fmt.Errorf("failed to parse HCL: %s", diags.Error())
+		logger.Error("Failed to parse HCL", "diagnostics", diags.Error())
+		return Config{}, fmt.Errorf("failed to parse HCL: %s", formatDiagnostics(diags))
 	}
 
 	var config Config
+	logger.Debug("Decoding HCL body")
 	decodeDiags := gohcl.DecodeBody(file.Body, nil, &config)
 	if decodeDiags.HasErrors() {
-		return Config{}, fmt.Errorf("failed to decode HCL: %s", decodeDiags.Error())
-	}
+		logger.Warn("Failed to decode new format, attempting to decode old format", "diagnostics", decodeDiags.Error())
 
-	// Handle old format for filter configs
-	handleOldFormat := func(v interface{}) interface{} {
-		if slice, ok := v.([]string); ok {
-			return FilterConfig{Values: slice}
+		// Try to decode using the old format
+		var oldConfig struct {
+			Repositories *struct {
+				GitSpace *struct {
+					Path string `hcl:"path"`
+				} `hcl:"gitspace,block"`
+				Labels []string `hcl:"labels,optional"`
+				Clone  *struct {
+					SCM        string   `hcl:"scm"`
+					Owner      string   `hcl:"owner"`
+					EndsWith   []string `hcl:"endsWith,optional"`
+					StartsWith []string `hcl:"startsWith,optional"`
+					Includes   []string `hcl:"includes,optional"`
+					Names      []string `hcl:"name,optional"`
+					Auth       *struct {
+						Type    string `hcl:"type"`
+						KeyPath string `hcl:"keyPath"`
+					} `hcl:"auth,block"`
+				} `hcl:"clone,block"`
+			} `hcl:"repositories,block"`
 		}
-		return v
+
+		oldDecodeDiags := gohcl.DecodeBody(file.Body, nil, &oldConfig)
+		if oldDecodeDiags.HasErrors() {
+			logger.Error("Failed to decode old format config", "diagnostics", oldDecodeDiags.Error())
+			return Config{}, fmt.Errorf("failed to decode HCL: %s", formatDiagnostics(oldDecodeDiags))
+		}
+
+		// Convert old format to new format
+		config.Repositories = &struct {
+			GitSpace *struct {
+				Path string `hcl:"path"`
+			} `hcl:"gitspace,block"`
+			Labels []string `hcl:"labels,optional"`
+			Clone  *struct {
+				SCM        string        `hcl:"scm"`
+				Owner      string        `hcl:"owner"`
+				EndsWith   *FilterConfig `hcl:"endsWith,block"`
+				StartsWith *FilterConfig `hcl:"startsWith,block"`
+				Includes   *FilterConfig `hcl:"includes,block"`
+				Names      *FilterConfig `hcl:"name,block"`
+				Auth       *struct {
+					Type    string `hcl:"type"`
+					KeyPath string `hcl:"keyPath"`
+				} `hcl:"auth,block"`
+			} `hcl:"clone,block"`
+		}{
+			GitSpace: oldConfig.Repositories.GitSpace,
+			Labels:   oldConfig.Repositories.Labels,
+			Clone: &struct {
+				SCM        string        `hcl:"scm"`
+				Owner      string        `hcl:"owner"`
+				EndsWith   *FilterConfig `hcl:"endsWith,block"`
+				StartsWith *FilterConfig `hcl:"startsWith,block"`
+				Includes   *FilterConfig `hcl:"includes,block"`
+				Names      *FilterConfig `hcl:"name,block"`
+				Auth       *struct {
+					Type    string `hcl:"type"`
+					KeyPath string `hcl:"keyPath"`
+				} `hcl:"auth,block"`
+			}{
+				SCM:   oldConfig.Repositories.Clone.SCM,
+				Owner: oldConfig.Repositories.Clone.Owner,
+				EndsWith: &FilterConfig{
+					Values: oldConfig.Repositories.Clone.EndsWith,
+				},
+				StartsWith: &FilterConfig{
+					Values: oldConfig.Repositories.Clone.StartsWith,
+				},
+				Includes: &FilterConfig{
+					Values: oldConfig.Repositories.Clone.Includes,
+				},
+				Names: &FilterConfig{
+					Values: oldConfig.Repositories.Clone.Names,
+				},
+				Auth: oldConfig.Repositories.Clone.Auth,
+			},
+		}
+
+		logger.Info("Successfully decoded old format config")
+	} else {
+		logger.Info("Successfully decoded new format config")
 	}
 
-	if config.Repositories != nil && config.Repositories.Clone != nil {
-		config.Repositories.Clone.EndsWith = handleOldFormat(config.Repositories.Clone.EndsWith)
-		config.Repositories.Clone.StartsWith = handleOldFormat(config.Repositories.Clone.StartsWith)
-		config.Repositories.Clone.Includes = handleOldFormat(config.Repositories.Clone.Includes)
-		config.Repositories.Clone.Names = handleOldFormat(config.Repositories.Clone.Names)
-	}
-
+	logger.Debug("Config decoding completed")
 	return config, nil
+}
+
+func formatDiagnostics(diags hcl.Diagnostics) string {
+	var messages []string
+	for _, diag := range diags {
+		messages = append(messages, fmt.Sprintf("%s: %s at %s", diag.Severity, diag.Summary, diag.Subject))
+		if diag.Detail != "" {
+			messages = append(messages, fmt.Sprintf("  Detail: %s", diag.Detail))
+		}
+	}
+	return strings.Join(messages, "\n")
 }
