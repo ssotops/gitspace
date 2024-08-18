@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+  "runtime/debug"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -58,6 +59,25 @@ func main() {
 		ReportCaller:    true,
 		ReportTimestamp: true,
 	})
+
+	// Create styles for the welcome message
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FFD700")). // Gold color
+		BorderStyle(lipgloss.RoundedBorder()).
+		Padding(1)
+
+	subtitleStyle := lipgloss.NewStyle().
+		Italic(true).
+		Foreground(lipgloss.Color("#87CEEB")) // Sky Blue color
+
+	// Get current version
+	version := getCurrentVersion()
+
+	// Print welcome message
+	fmt.Println(titleStyle.Render("Welcome to Gitspace!"))
+	fmt.Println(subtitleStyle.Render(fmt.Sprintf("Current version: %s", version)))
+	fmt.Println()
 
 	// Prompt user for config file path
 	var configPath string
@@ -458,4 +478,17 @@ func filterRepositories(repos []string, config *Config) []string {
 	}
 
 	return filtered
+}
+
+func getCurrentVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			return setting.Value[:7] // Return first 7 characters of the git commit hash
+		}
+	}
+	return "unknown"
 }
