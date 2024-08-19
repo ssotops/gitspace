@@ -132,6 +132,8 @@ func main() {
 			syncLabels(logger, &config)
 		case "upgrade":
 			upgradeGitspace(logger)
+		case "config":
+			handleConfigCommand(logger)
 		case "quit":
 			fmt.Println("Exiting Gitspace. Goodbye!")
 			return
@@ -149,6 +151,7 @@ func showMainMenu() string {
 			huh.NewOption("Repositories", "repositories"),
 			huh.NewOption("Sync Labels", "sync"),
 			huh.NewOption("Upgrade Gitspace", "upgrade"),
+			huh.NewOption("Config", "config"),
 			huh.NewOption("Quit", "quit"),
 		).
 		Value(&choice).
@@ -160,6 +163,58 @@ func showMainMenu() string {
 	}
 
 	return choice
+}
+
+func handleConfigCommand(logger *log.Logger) {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		logger.Error("Error getting cache directory", "error", err)
+		return
+	}
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FFFF"))
+	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+	symlinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF"))
+
+	fmt.Println(titleStyle.Render("\n📂 Cache Directory:"))
+	fmt.Printf("   %s\n\n", pathStyle.Render(fmt.Sprintf("cd %s", cacheDir)))
+
+	fmt.Println(titleStyle.Render("📄 Gitspace Config Files:"))
+	err = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".hcl" {
+			fmt.Printf("   %s\n", pathStyle.Render(path))
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Error("Error walking through cache directory", "error", err)
+	}
+
+	fmt.Println(titleStyle.Render("\n🔗 Gitspace Config Symlinks:"))
+	err = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			realPath, err := os.Readlink(path)
+			if err != nil {
+				logger.Error("Error reading symlink", "path", path, "error", err)
+				return nil
+			}
+			if filepath.Ext(realPath) == ".hcl" {
+				fmt.Printf("   %s -> %s\n", symlinkStyle.Render(path), pathStyle.Render(realPath))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Error("Error walking through cache directory for symlinks", "error", err)
+	}
+
+	fmt.Println() // Add an extra newline for spacing
 }
 
 func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
