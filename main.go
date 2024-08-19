@@ -264,57 +264,92 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 		return
 	}
 
-	// Clone repositories with progress bar
-	cloneResults := make(map[string]error)
-	symlinkedRepos := make([]string, 0)
-
+	// Clone or update repositories
+	results := make(map[string]*RepoResult)
 	boldStyle := lipgloss.NewStyle().Bold(true)
 
 	for _, repo := range filteredRepos {
 		repoPath := filepath.Join(repoDir, repo)
-		fmt.Printf("%s\n", boldStyle.Render(fmt.Sprintf("Cloning %s...", repo)))
-		_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
-			URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo),
-			Progress: os.Stdout,
-			Auth:     sshAuth,
-		})
-		cloneResults[repo] = err
-		if err == nil {
-			fmt.Println(boldStyle.Render("Clone successful"))
-		} else {
-			fmt.Println(boldStyle.Render("Clone failed"))
-		}
-		fmt.Println() // Add a newline after each clone operation
-	}
+		result := &RepoResult{Name: repo}
+		results[repo] = result
 
-	// Create symlinks
-	for repo, err := range cloneResults {
-		if err == nil {
-			source := filepath.Join(repoDir, repo)
+		fmt.Printf("%s\n", boldStyle.Render(fmt.Sprintf("Processing %s...", repo)))
 
-			// Create symlink in baseDir
-			targetBase := filepath.Join(baseDir, repo)
-			os.Remove(targetBase) // Remove existing symlink if it exists
-			err := os.Symlink(source, targetBase)
+		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+			// Clone the repository if it doesn't exist
+			_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
+				URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo),
+				Progress: os.Stdout,
+				Auth:     sshAuth,
+			})
 			if err != nil {
-				logger.Error("Error creating symlink in baseDir", "repo", repo, "error", err)
+				result.Error = err
+				fmt.Println(boldStyle.Render("Clone failed"))
 			} else {
-				symlinkedRepos = append(symlinkedRepos, repo)
+				result.Cloned = true
+				fmt.Println(boldStyle.Render("Clone successful"))
+			}
+		} else {
+			// Open the existing repository
+			r, err := git.PlainOpen(repoPath)
+			if err != nil {
+				result.Error = err
+				fmt.Println(boldStyle.Render("Failed to open existing repository"))
+				continue
 			}
 
-			// Create symlink in cacheDir
-			targetCache := filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)
-			os.MkdirAll(filepath.Dir(targetCache), 0755) // Ensure parent directory exists
-			os.Remove(targetCache)                       // Remove existing symlink if it exists
-			err = os.Symlink(source, targetCache)
-			if err != nil {
-				logger.Error("Error creating symlink in cacheDir", "repo", repo, "error", err)
+			// Fetch updates
+			err = r.Fetch(&git.FetchOptions{
+				Auth:     sshAuth,
+				Progress: os.Stdout,
+			})
+			if err != nil && err != git.NoErrAlreadyUpToDate {
+				result.Error = err
+				fmt.Println(boldStyle.Render("Fetch failed"))
+			} else {
+				result.Updated = true
+				fmt.Println(boldStyle.Render("Fetch successful"))
 			}
 		}
+
+		// Create local symlink
+		localSymlinkPath := filepath.Join(baseDir, repo)
+		err = createSymlink(repoPath, localSymlinkPath)
+		if err != nil {
+			logger.Error("Error creating local symlink", "repo", repo, "error", err)
+		} else {
+			result.LocalSymlink = localSymlinkPath
+		}
+
+		// Create global symlink
+		globalSymlinkPath := filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)
+		err = createSymlink(repoPath, globalSymlinkPath)
+		if err != nil {
+			logger.Error("Error creating global symlink", "repo", repo, "error", err)
+		} else {
+			result.GlobalSymlink = globalSymlinkPath
+		}
+
+		fmt.Println() // Add a newline after each repository operation
 	}
 
 	// Print summary table
-	printSummaryTable(config, cloneResults, repoDir, baseDir, symlinkedRepos)
+	printSummaryTable(config, results, repoDir)
+}
+
+func createSymlink(source, target string) error {
+	os.MkdirAll(filepath.Dir(target), 0755) // Ensure parent directory exists
+	os.Remove(target)                       // Remove existing symlink if it exists
+	return os.Symlink(source, target)
+}
+
+type RepoResult struct {
+	Name          string
+	Cloned        bool
+	Updated       bool
+	LocalSymlink  string
+	GlobalSymlink string
+	Error         error
 }
 
 func upgradeGitspace(logger *log.Logger) {
@@ -429,81 +464,94 @@ func downloadBinary(url string) (string, error) {
 	return tempFile.Name(), nil
 }
 
-func printSummaryTable(config *Config, cloneResults map[string]error, repoDir, baseDir string, symlinkedRepos []string) {
+func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir string) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	fmt.Println(headerStyle.Render("\nCloning and symlinking summary:"))
+	fmt.Println(headerStyle.Render("\nRepository Processing Summary:"))
 	fmt.Println() // Add a newline after the header
 
 	// Define column styles
 	repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
-	statusStyle := lipgloss.NewStyle().Width(10).Align(lipgloss.Left)
-	urlStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
-	errorStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
+	statusStyle := lipgloss.NewStyle().Width(15).Align(lipgloss.Left)
+	localSymlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+	globalSymlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+	errorStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
 
 	// Print table header
-	fmt.Printf("%s %s %s %s\n",
+	fmt.Printf("%s %s %s %s %s\n",
 		repoStyle.Render("📁 Repository"),
 		statusStyle.Render("✅ Status"),
-		urlStyle.Render("🔗 URL"),
+		localSymlinkStyle.Render("🔗 Local Symlink"),
+		globalSymlinkStyle.Render("🔗 Global Symlink"),
 		errorStyle.Render("❌ Error"))
 
-	fmt.Println(strings.Repeat("-", 130)) // Separator line
+	fmt.Println(strings.Repeat("-", 125)) // Separator line
 
 	// Print table rows
-	for repo, err := range cloneResults {
-		status := "Success"
+	for _, result := range results {
+		status := "No changes"
+		if result.Cloned {
+			status = "Cloned"
+		} else if result.Updated {
+			status = "Updated"
+		}
+
+		localSymlink := "-"
+		if result.LocalSymlink != "" {
+			localSymlink = result.LocalSymlink
+		}
+
+		globalSymlink := "-"
+		if result.GlobalSymlink != "" {
+			globalSymlink = result.GlobalSymlink
+		}
+
 		errorMsg := "-"
-		if err != nil {
-			status = "Failed"
-			errorMsg = err.Error()
+		if result.Error != nil {
+			errorMsg = result.Error.Error()
 		}
-		fmt.Printf("%s %s %s %s\n",
-			repoStyle.Render(repo),
+
+		fmt.Printf("%s %s %s %s %s\n",
+			repoStyle.Render(result.Name),
 			statusStyle.Render(status),
-			urlStyle.Render(fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)),
+			localSymlinkStyle.Render(localSymlink),
+			globalSymlinkStyle.Render(globalSymlink),
 			errorStyle.Render(errorMsg))
-	}
-
-	// Print symlinked repositories table
-	if len(symlinkedRepos) > 0 {
-		fmt.Println()
-		fmt.Println(headerStyle.Render("Symlinked repositories:"))
-		fmt.Println() // Add a newline after the header
-
-		// Define column styles for symlink table
-		repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
-		symlinkBaseStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-		symlinkCacheStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-		pathStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-
-		// Print table header
-		fmt.Printf("%s %s %s %s\n",
-			repoStyle.Render("📁 Repository"),
-			symlinkBaseStyle.Render("🔗 Base Symlink"),
-			symlinkCacheStyle.Render("🔗 Cache Symlink"),
-			pathStyle.Render("📂 Repository Path"))
-
-		fmt.Println(strings.Repeat("-", 110)) // Separator line
-
-		cacheDir, _ := getCacheDir() // Assuming getCacheDir() is available
-
-		// Print table rows
-		for _, repo := range symlinkedRepos {
-			fmt.Printf("%s %s %s %s\n",
-				repoStyle.Render(repo),
-				symlinkBaseStyle.Render(filepath.Join(baseDir, repo)),
-				symlinkCacheStyle.Render(filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)),
-				pathStyle.Render(filepath.Join(repoDir, repo)))
-		}
 	}
 
 	fmt.Println()
 	fmt.Println(headerStyle.Render("Summary of changes:"))
 	fmt.Println() // Add a newline after the header
-	totalAttempted := len(cloneResults)
-	successfulClones := len(symlinkedRepos)
-	fmt.Printf("  Total repositories attempted: %d\n", totalAttempted)
-	fmt.Printf("  Successfully cloned: %d/%d\n", successfulClones, totalAttempted)
+
+	totalRepos := len(results)
+	clonedRepos := 0
+	updatedRepos := 0
+	failedRepos := 0
+	localSymlinks := 0
+	globalSymlinks := 0
+
+	for _, result := range results {
+		if result.Cloned {
+			clonedRepos++
+		} else if result.Updated {
+			updatedRepos++
+		}
+		if result.Error != nil {
+			failedRepos++
+		}
+		if result.LocalSymlink != "" {
+			localSymlinks++
+		}
+		if result.GlobalSymlink != "" {
+			globalSymlinks++
+		}
+	}
+
+	fmt.Printf("  Total repositories processed: %d\n", totalRepos)
+	fmt.Printf("  Newly cloned: %d\n", clonedRepos)
+	fmt.Printf("  Updated: %d\n", updatedRepos)
+	fmt.Printf("  Failed operations: %d\n", failedRepos)
+	fmt.Printf("  Local symlinks created: %d\n", localSymlinks)
+	fmt.Printf("  Global symlinks created: %d\n", globalSymlinks)
 }
 
 func filterRepositories(repos []string, config *Config) []string {
