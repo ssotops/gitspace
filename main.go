@@ -27,7 +27,6 @@ import (
 var Version string
 
 // Config represents the structure of our HCL configuration file
-// Update the Config struct
 type Config struct {
 	Repositories *struct {
 		GitSpace *struct {
@@ -73,19 +72,19 @@ func main() {
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
-		Level:           log.DebugLevel, // Set to DebugLevel to see all logs
+		Level:           log.DebugLevel,
 	})
 
 	// Create styles for the welcome message
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#FFD700")). // Gold color
+		Foreground(lipgloss.Color("#FFD700")).
 		BorderStyle(lipgloss.RoundedBorder()).
 		Padding(1)
 
 	subtitleStyle := lipgloss.NewStyle().
 		Italic(true).
-		Foreground(lipgloss.Color("#87CEEB")) // Sky Blue color
+		Foreground(lipgloss.Color("#87CEEB"))
 
 	// Get current version
 	version := getCurrentVersion()
@@ -125,7 +124,7 @@ func main() {
 	err = huh.NewSelect[string]().
 		Title("Choose an action").
 		Options(
-			huh.NewOption("Clone Repositories", "clone"),
+			huh.NewOption("Repositories", "repositories"),
 			huh.NewOption("Sync Labels", "sync"),
 			huh.NewOption("Upgrade Gitspace", "upgrade"),
 		).
@@ -138,8 +137,8 @@ func main() {
 	}
 
 	switch choice {
-	case "clone":
-		cloneRepositories(logger, &config)
+	case "repositories":
+		handleRepositoriesCommand(logger, &config)
 	case "sync":
 		syncLabels(logger, &config)
 	case "upgrade":
@@ -147,6 +146,38 @@ func main() {
 	default:
 		logger.Error("Invalid choice")
 	}
+}
+
+func handleRepositoriesCommand(logger *log.Logger, config *Config) {
+	var subChoice string
+	err := huh.NewSelect[string]().
+		Title("Choose a repositories action").
+		Options(
+			huh.NewOption("Clone Local", "clone"),
+			huh.NewOption("Sync Local", "sync"),
+		).
+		Value(&subChoice).
+		Run()
+
+	if err != nil {
+		logger.Error("Error getting repositories sub-choice", "error", err)
+		return
+	}
+
+	switch subChoice {
+	case "clone":
+		cloneRepositories(logger, config)
+	case "sync":
+		syncLocalRepositories(logger, config)
+	default:
+		logger.Error("Invalid repositories sub-choice")
+	}
+}
+
+func syncLocalRepositories(logger *log.Logger, config *Config) {
+	logger.Info("Syncing local repositories...")
+	// Placeholder implementation
+	fmt.Println("Sync Local functionality is not yet implemented.")
 }
 
 func cloneRepositories(logger *log.Logger, config *Config) {
