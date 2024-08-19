@@ -6,7 +6,182 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/stretchr/testify/assert"
 )
+
+func TestFilterRepositories(t *testing.T) {
+	repos := []string{"service-a", "api-b", "test-c", "demo-d", "core-lib", "exact-repo-name"}
+
+	testCases := []struct {
+		name     string
+		config   *Config
+		expected []string
+	}{
+		{
+			name: "Filter by EndsWith",
+			config: &Config{
+				Repositories: &struct {
+					GitSpace *struct {
+						Path string `hcl:"path"`
+					} `hcl:"gitspace,block"`
+					Labels []string `hcl:"labels,optional"`
+					Clone  *struct {
+						SCM        string        `hcl:"scm"`
+						Owner      string        `hcl:"owner"`
+						EndsWith   *FilterConfig `hcl:"endsWith,block"`
+						StartsWith *FilterConfig `hcl:"startsWith,block"`
+						Includes   *FilterConfig `hcl:"includes,block"`
+						Names      *FilterConfig `hcl:"name,block"`
+						Auth       *struct {
+							Type    string `hcl:"type"`
+							KeyPath string `hcl:"keyPath"`
+						} `hcl:"auth,block"`
+					} `hcl:"clone,block"`
+				}{
+					Clone: &struct {
+						SCM        string        `hcl:"scm"`
+						Owner      string        `hcl:"owner"`
+						EndsWith   *FilterConfig `hcl:"endsWith,block"`
+						StartsWith *FilterConfig `hcl:"startsWith,block"`
+						Includes   *FilterConfig `hcl:"includes,block"`
+						Names      *FilterConfig `hcl:"name,block"`
+						Auth       *struct {
+							Type    string `hcl:"type"`
+							KeyPath string `hcl:"keyPath"`
+						} `hcl:"auth,block"`
+					}{
+						EndsWith: &FilterConfig{Values: []string{"service", "api"}},
+					},
+				},
+			},
+			expected: []string{"service-a", "api-b"},
+		},
+		{
+			name: "Filter by StartsWith",
+			config: &Config{
+				Repositories: &struct {
+					GitSpace *struct {
+						Path string `hcl:"path"`
+					} `hcl:"gitspace,block"`
+					Labels []string `hcl:"labels,optional"`
+					Clone  *struct {
+						SCM        string        `hcl:"scm"`
+						Owner      string        `hcl:"owner"`
+						EndsWith   *FilterConfig `hcl:"endsWith,block"`
+						StartsWith *FilterConfig `hcl:"startsWith,block"`
+						Includes   *FilterConfig `hcl:"includes,block"`
+						Names      *FilterConfig `hcl:"name,block"`
+						Auth       *struct {
+							Type    string `hcl:"type"`
+							KeyPath string `hcl:"keyPath"`
+						} `hcl:"auth,block"`
+					} `hcl:"clone,block"`
+				}{
+					Clone: &struct {
+						SCM        string        `hcl:"scm"`
+						Owner      string        `hcl:"owner"`
+						EndsWith   *FilterConfig `hcl:"endsWith,block"`
+						StartsWith *FilterConfig `hcl:"startsWith,block"`
+						Includes   *FilterConfig `hcl:"includes,block"`
+						Names      *FilterConfig `hcl:"name,block"`
+						Auth       *struct {
+							Type    string `hcl:"type"`
+							KeyPath string `hcl:"keyPath"`
+						} `hcl:"auth,block"`
+					}{
+						StartsWith: &FilterConfig{Values: []string{"test-", "demo-"}},
+					},
+				},
+			},
+			expected: []string{"test-c", "demo-d"},
+		},
+		{
+			name: "Filter by Includes",
+			config: &Config{
+				Repositories: &struct {
+					GitSpace *struct {
+						Path string `hcl:"path"`
+					} `hcl:"gitspace,block"`
+					Labels []string `hcl:"labels,optional"`
+					Clone  *struct {
+						SCM        string        `hcl:"scm"`
+						Owner      string        `hcl:"owner"`
+						EndsWith   *FilterConfig `hcl:"endsWith,block"`
+						StartsWith *FilterConfig `hcl:"startsWith,block"`
+						Includes   *FilterConfig `hcl:"includes,block"`
+						Names      *FilterConfig `hcl:"name,block"`
+						Auth       *struct {
+							Type    string `hcl:"type"`
+							KeyPath string `hcl:"keyPath"`
+						} `hcl:"auth,block"`
+					} `hcl:"clone,block"`
+				}{
+					Clone: &struct {
+						SCM        string        `hcl:"scm"`
+						Owner      string        `hcl:"owner"`
+						EndsWith   *FilterConfig `hcl:"endsWith,block"`
+						StartsWith *FilterConfig `hcl:"startsWith,block"`
+						Includes   *FilterConfig `hcl:"includes,block"`
+						Names      *FilterConfig `hcl:"name,block"`
+						Auth       *struct {
+							Type    string `hcl:"type"`
+							KeyPath string `hcl:"keyPath"`
+						} `hcl:"auth,block"`
+					}{
+						Includes: &FilterConfig{Values: []string{"core", "lib"}},
+					},
+				},
+			},
+			expected: []string{"core-lib"},
+		},
+		{
+			name: "Filter by Names",
+			config: &Config{
+				Repositories: &struct {
+					GitSpace *struct {
+						Path string `hcl:"path"`
+					} `hcl:"gitspace,block"`
+					Labels []string `hcl:"labels,optional"`
+					Clone  *struct {
+						SCM        string        `hcl:"scm"`
+						Owner      string        `hcl:"owner"`
+						EndsWith   *FilterConfig `hcl:"endsWith,block"`
+						StartsWith *FilterConfig `hcl:"startsWith,block"`
+						Includes   *FilterConfig `hcl:"includes,block"`
+						Names      *FilterConfig `hcl:"name,block"`
+						Auth       *struct {
+							Type    string `hcl:"type"`
+							KeyPath string `hcl:"keyPath"`
+						} `hcl:"auth,block"`
+					} `hcl:"clone,block"`
+				}{
+					Clone: &struct {
+						SCM        string        `hcl:"scm"`
+						Owner      string        `hcl:"owner"`
+						EndsWith   *FilterConfig `hcl:"endsWith,block"`
+						StartsWith *FilterConfig `hcl:"startsWith,block"`
+						Includes   *FilterConfig `hcl:"includes,block"`
+						Names      *FilterConfig `hcl:"name,block"`
+						Auth       *struct {
+							Type    string `hcl:"type"`
+							KeyPath string `hcl:"keyPath"`
+						} `hcl:"auth,block"`
+					}{
+						Names: &FilterConfig{Values: []string{"exact-repo-name"}},
+					},
+				},
+			},
+			expected: []string{"exact-repo-name"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := filterRepositories(repos, tc.config)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
 
 // MockGitHubAPI simulates fetching repositories from GitHub
 func MockGitHubAPI() []string {
@@ -33,13 +208,14 @@ func TestIntegrationEndsWith(t *testing.T) {
 			GitSpace *struct {
 				Path string `hcl:"path"`
 			} `hcl:"gitspace,block"`
-			Clone *struct {
-				SCM        string   `hcl:"scm"`
-				Owner      string   `hcl:"owner"`
-				EndsWith   []string `hcl:"endsWith,optional"`
-				StartsWith []string `hcl:"startsWith,optional"`
-				Includes   []string `hcl:"includes,optional"`
-				Names      []string `hcl:"name,optional"`
+			Labels []string `hcl:"labels,optional"`
+			Clone  *struct {
+				SCM        string        `hcl:"scm"`
+				Owner      string        `hcl:"owner"`
+				EndsWith   *FilterConfig `hcl:"endsWith,block"`
+				StartsWith *FilterConfig `hcl:"startsWith,block"`
+				Includes   *FilterConfig `hcl:"includes,block"`
+				Names      *FilterConfig `hcl:"name,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -50,12 +226,12 @@ func TestIntegrationEndsWith(t *testing.T) {
 				Path string `hcl:"path"`
 			}{Path: "test_repos"},
 			Clone: &struct {
-				SCM        string   `hcl:"scm"`
-				Owner      string   `hcl:"owner"`
-				EndsWith   []string `hcl:"endsWith,optional"`
-				StartsWith []string `hcl:"startsWith,optional"`
-				Includes   []string `hcl:"includes,optional"`
-				Names      []string `hcl:"name,optional"`
+				SCM        string        `hcl:"scm"`
+				Owner      string        `hcl:"owner"`
+				EndsWith   *FilterConfig `hcl:"endsWith,block"`
+				StartsWith *FilterConfig `hcl:"startsWith,block"`
+				Includes   *FilterConfig `hcl:"includes,block"`
+				Names      *FilterConfig `hcl:"name,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -63,7 +239,7 @@ func TestIntegrationEndsWith(t *testing.T) {
 			}{
 				SCM:      "github.com",
 				Owner:    "testowner",
-				EndsWith: []string{"tool", "tools"}, // Add both "tool" and "tools" to catch both cases
+				EndsWith: &FilterConfig{Values: []string{"tool", "tools"}},
 			},
 		},
 	}
@@ -97,13 +273,14 @@ func TestIntegrationIncludes(t *testing.T) {
 			GitSpace *struct {
 				Path string `hcl:"path"`
 			} `hcl:"gitspace,block"`
-			Clone *struct {
-				SCM        string   `hcl:"scm"`
-				Owner      string   `hcl:"owner"`
-				EndsWith   []string `hcl:"endsWith,optional"`
-				StartsWith []string `hcl:"startsWith,optional"`
-				Includes   []string `hcl:"includes,optional"`
-				Names      []string `hcl:"name,optional"`
+			Labels []string `hcl:"labels,optional"`
+			Clone  *struct {
+				SCM        string        `hcl:"scm"`
+				Owner      string        `hcl:"owner"`
+				EndsWith   *FilterConfig `hcl:"endsWith,block"`
+				StartsWith *FilterConfig `hcl:"startsWith,block"`
+				Includes   *FilterConfig `hcl:"includes,block"`
+				Names      *FilterConfig `hcl:"name,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -114,12 +291,12 @@ func TestIntegrationIncludes(t *testing.T) {
 				Path string `hcl:"path"`
 			}{Path: "test_repos"},
 			Clone: &struct {
-				SCM        string   `hcl:"scm"`
-				Owner      string   `hcl:"owner"`
-				EndsWith   []string `hcl:"endsWith,optional"`
-				StartsWith []string `hcl:"startsWith,optional"`
-				Includes   []string `hcl:"includes,optional"`
-				Names      []string `hcl:"name,optional"`
+				SCM        string        `hcl:"scm"`
+				Owner      string        `hcl:"owner"`
+				EndsWith   *FilterConfig `hcl:"endsWith,block"`
+				StartsWith *FilterConfig `hcl:"startsWith,block"`
+				Includes   *FilterConfig `hcl:"includes,block"`
+				Names      *FilterConfig `hcl:"name,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -127,7 +304,7 @@ func TestIntegrationIncludes(t *testing.T) {
 			}{
 				SCM:      "github.com",
 				Owner:    "testowner",
-				Includes: []string{"test", "utils"},
+				Includes: &FilterConfig{Values: []string{"test", "utils"}},
 			},
 		},
 	}
@@ -161,13 +338,14 @@ func TestIntegrationName(t *testing.T) {
 			GitSpace *struct {
 				Path string `hcl:"path"`
 			} `hcl:"gitspace,block"`
-			Clone *struct {
-				SCM        string   `hcl:"scm"`
-				Owner      string   `hcl:"owner"`
-				EndsWith   []string `hcl:"endsWith,optional"`
-				StartsWith []string `hcl:"startsWith,optional"`
-				Includes   []string `hcl:"includes,optional"`
-				Names      []string `hcl:"name,optional"`
+			Labels []string `hcl:"labels,optional"`
+			Clone  *struct {
+				SCM        string        `hcl:"scm"`
+				Owner      string        `hcl:"owner"`
+				EndsWith   *FilterConfig `hcl:"endsWith,block"`
+				StartsWith *FilterConfig `hcl:"startsWith,block"`
+				Includes   *FilterConfig `hcl:"includes,block"`
+				Names      *FilterConfig `hcl:"name,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -178,12 +356,12 @@ func TestIntegrationName(t *testing.T) {
 				Path string `hcl:"path"`
 			}{Path: "test_repos"},
 			Clone: &struct {
-				SCM        string   `hcl:"scm"`
-				Owner      string   `hcl:"owner"`
-				EndsWith   []string `hcl:"endsWith,optional"`
-				StartsWith []string `hcl:"startsWith,optional"`
-				Includes   []string `hcl:"includes,optional"`
-				Names      []string `hcl:"name,optional"`
+				SCM        string        `hcl:"scm"`
+				Owner      string        `hcl:"owner"`
+				EndsWith   *FilterConfig `hcl:"endsWith,block"`
+				StartsWith *FilterConfig `hcl:"startsWith,block"`
+				Includes   *FilterConfig `hcl:"includes,block"`
+				Names      *FilterConfig `hcl:"name,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -191,7 +369,7 @@ func TestIntegrationName(t *testing.T) {
 			}{
 				SCM:   "github.com",
 				Owner: "testowner",
-				Names: []string{"gitspace", "ssotools"},
+				Names: &FilterConfig{Values: []string{"gitspace", "ssotools"}},
 			},
 		},
 	}

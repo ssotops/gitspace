@@ -761,7 +761,17 @@ func decodeHCLFile(filename string) (Config, error) {
 func formatDiagnostics(diags hcl.Diagnostics) string {
 	var messages []string
 	for _, diag := range diags {
-		messages = append(messages, fmt.Sprintf("%s: %s at %s", diag.Severity, diag.Summary, diag.Subject))
+		severityStr := ""
+		switch diag.Severity {
+		case hcl.DiagError:
+			severityStr = "Error"
+		case hcl.DiagWarning:
+			severityStr = "Warning"
+		default:
+			severityStr = "Unknown"
+		}
+
+		messages = append(messages, fmt.Sprintf("%s: %s at %s", severityStr, diag.Summary, diag.Subject))
 		if diag.Detail != "" {
 			messages = append(messages, fmt.Sprintf("  Detail: %s", diag.Detail))
 		}
