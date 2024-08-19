@@ -132,6 +132,8 @@ func main() {
 			syncLabels(logger, &config)
 		case "upgrade":
 			upgradeGitspace(logger)
+		case "config":
+			handleConfigCommand(logger)
 		case "quit":
 			fmt.Println("Exiting Gitspace. Goodbye!")
 			return
@@ -149,6 +151,7 @@ func showMainMenu() string {
 			huh.NewOption("Repositories", "repositories"),
 			huh.NewOption("Sync Labels", "sync"),
 			huh.NewOption("Upgrade Gitspace", "upgrade"),
+			huh.NewOption("Config", "config"),
 			huh.NewOption("Quit", "quit"),
 		).
 		Value(&choice).
@@ -160,6 +163,58 @@ func showMainMenu() string {
 	}
 
 	return choice
+}
+
+func handleConfigCommand(logger *log.Logger) {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		logger.Error("Error getting cache directory", "error", err)
+		return
+	}
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FFFF"))
+	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+	symlinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF"))
+
+	fmt.Println(titleStyle.Render("\n📂 Cache Directory:"))
+	fmt.Printf("   %s\n\n", pathStyle.Render(fmt.Sprintf("cd %s", cacheDir)))
+
+	fmt.Println(titleStyle.Render("📄 Gitspace Config Files:"))
+	err = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".hcl" {
+			fmt.Printf("   %s\n", pathStyle.Render(path))
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Error("Error walking through cache directory", "error", err)
+	}
+
+	fmt.Println(titleStyle.Render("\n🔗 Gitspace Config Symlinks:"))
+	err = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			realPath, err := os.Readlink(path)
+			if err != nil {
+				logger.Error("Error reading symlink", "path", path, "error", err)
+				return nil
+			}
+			if filepath.Ext(realPath) == ".hcl" {
+				fmt.Printf("   %s -> %s\n", symlinkStyle.Render(path), pathStyle.Render(realPath))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Error("Error walking through cache directory for symlinks", "error", err)
+	}
+
+	fmt.Println() // Add an extra newline for spacing
 }
 
 func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
@@ -203,10 +258,15 @@ func syncLocalRepositories(logger *log.Logger, config *Config) {
 }
 
 func cloneRepositories(logger *log.Logger, config *Config) {
-	// This function will contain most of the original main() function logic
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		logger.Error("Error getting cache directory", "error", err)
+		return
+	}
+
 	baseDir := config.Repositories.GitSpace.Path
-	repoDir := filepath.Join(baseDir, ".repositories")
-	err := os.MkdirAll(repoDir, 0755)
+	repoDir := filepath.Join(cacheDir, ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	err = os.MkdirAll(repoDir, 0755)
 	if err != nil {
 		logger.Error("Error creating directories", "error", err)
 		return
@@ -236,7 +296,6 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 	}
 
 	// Log the configuration
-	// Log the configuration
 	logger.Info("Configuration loaded",
 		"scm", config.Repositories.Clone.SCM,
 		"owner", config.Repositories.Clone.Owner)
@@ -260,48 +319,92 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 		return
 	}
 
-	// Clone repositories with progress bar
-	cloneResults := make(map[string]error)
-	symlinkedRepos := make([]string, 0)
-
+	// Clone or update repositories
+	results := make(map[string]*RepoResult)
 	boldStyle := lipgloss.NewStyle().Bold(true)
 
 	for _, repo := range filteredRepos {
-		fmt.Printf("%s\n", boldStyle.Render(fmt.Sprintf("Cloning %s...", repo)))
-		_, err := git.PlainClone(filepath.Join(repoDir, repo), false, &git.CloneOptions{
-			URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo),
-			Progress: os.Stdout,
-			Auth:     sshAuth,
-		})
-		cloneResults[repo] = err
-		if err == nil {
-			fmt.Println(boldStyle.Render("Clone successful"))
-		} else {
-			fmt.Println(boldStyle.Render("Clone failed"))
-		}
-		fmt.Println() // Add a newline after each clone operation
-	}
+		repoPath := filepath.Join(repoDir, repo)
+		result := &RepoResult{Name: repo}
+		results[repo] = result
 
-	// Create symlinks
-	for repo, err := range cloneResults {
-		if err == nil {
-			source := filepath.Join(".repositories", repo)
-			target := filepath.Join(baseDir, repo)
+		fmt.Printf("%s\n", boldStyle.Render(fmt.Sprintf("Processing %s...", repo)))
 
-			// Remove existing symlink if it exists
-			os.Remove(target)
-
-			err := os.Symlink(source, target)
+		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+			// Clone the repository if it doesn't exist
+			_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
+				URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo),
+				Progress: os.Stdout,
+				Auth:     sshAuth,
+			})
 			if err != nil {
-				logger.Error("Error creating symlink", "repo", repo, "error", err)
+				result.Error = err
+				fmt.Println(boldStyle.Render("Clone failed"))
 			} else {
-				symlinkedRepos = append(symlinkedRepos, repo)
+				result.Cloned = true
+				fmt.Println(boldStyle.Render("Clone successful"))
+			}
+		} else {
+			// Open the existing repository
+			r, err := git.PlainOpen(repoPath)
+			if err != nil {
+				result.Error = err
+				fmt.Println(boldStyle.Render("Failed to open existing repository"))
+				continue
+			}
+
+			// Fetch updates
+			err = r.Fetch(&git.FetchOptions{
+				Auth:     sshAuth,
+				Progress: os.Stdout,
+			})
+			if err != nil && err != git.NoErrAlreadyUpToDate {
+				result.Error = err
+				fmt.Println(boldStyle.Render("Fetch failed"))
+			} else {
+				result.Updated = true
+				fmt.Println(boldStyle.Render("Fetch successful"))
 			}
 		}
+
+		// Create local symlink
+		localSymlinkPath := filepath.Join(baseDir, repo)
+		err = createSymlink(repoPath, localSymlinkPath)
+		if err != nil {
+			logger.Error("Error creating local symlink", "repo", repo, "error", err)
+		} else {
+			result.LocalSymlink = localSymlinkPath
+		}
+
+		// Create global symlink
+		globalSymlinkPath := filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)
+		err = createSymlink(repoPath, globalSymlinkPath)
+		if err != nil {
+			logger.Error("Error creating global symlink", "repo", repo, "error", err)
+		} else {
+			result.GlobalSymlink = globalSymlinkPath
+		}
+
+		fmt.Println() // Add a newline after each repository operation
 	}
 
 	// Print summary table
-	printSummaryTable(config, cloneResults, repoDir, baseDir, symlinkedRepos)
+	printSummaryTable(config, results, repoDir)
+}
+
+func createSymlink(source, target string) error {
+	os.MkdirAll(filepath.Dir(target), 0755) // Ensure parent directory exists
+	os.Remove(target)                       // Remove existing symlink if it exists
+	return os.Symlink(source, target)
+}
+
+type RepoResult struct {
+	Name          string
+	Cloned        bool
+	Updated       bool
+	LocalSymlink  string
+	GlobalSymlink string
+	Error         error
 }
 
 func upgradeGitspace(logger *log.Logger) {
@@ -416,76 +519,94 @@ func downloadBinary(url string) (string, error) {
 	return tempFile.Name(), nil
 }
 
-func printSummaryTable(config *Config, cloneResults map[string]error, repoDir, baseDir string, symlinkedRepos []string) {
+func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir string) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	fmt.Println(headerStyle.Render("\nCloning and symlinking summary:"))
+	fmt.Println(headerStyle.Render("\nRepository Processing Summary:"))
 	fmt.Println() // Add a newline after the header
 
 	// Define column styles
 	repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
-	statusStyle := lipgloss.NewStyle().Width(10).Align(lipgloss.Left)
-	urlStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
-	errorStyle := lipgloss.NewStyle().Width(50).Align(lipgloss.Left)
+	statusStyle := lipgloss.NewStyle().Width(15).Align(lipgloss.Left)
+	localSymlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+	globalSymlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+	errorStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
 
 	// Print table header
-	fmt.Printf("%s %s %s %s\n",
+	fmt.Printf("%s %s %s %s %s\n",
 		repoStyle.Render("📁 Repository"),
 		statusStyle.Render("✅ Status"),
-		urlStyle.Render("🔗 URL"),
+		localSymlinkStyle.Render("🔗 Local Symlink"),
+		globalSymlinkStyle.Render("🔗 Global Symlink"),
 		errorStyle.Render("❌ Error"))
 
-	fmt.Println(strings.Repeat("-", 130)) // Separator line
+	fmt.Println(strings.Repeat("-", 125)) // Separator line
 
 	// Print table rows
-	for repo, err := range cloneResults {
-		status := "Success"
+	for _, result := range results {
+		status := "No changes"
+		if result.Cloned {
+			status = "Cloned"
+		} else if result.Updated {
+			status = "Updated"
+		}
+
+		localSymlink := "-"
+		if result.LocalSymlink != "" {
+			localSymlink = result.LocalSymlink
+		}
+
+		globalSymlink := "-"
+		if result.GlobalSymlink != "" {
+			globalSymlink = result.GlobalSymlink
+		}
+
 		errorMsg := "-"
-		if err != nil {
-			status = "Failed"
-			errorMsg = err.Error()
+		if result.Error != nil {
+			errorMsg = result.Error.Error()
 		}
-		fmt.Printf("%s %s %s %s\n",
-			repoStyle.Render(repo),
+
+		fmt.Printf("%s %s %s %s %s\n",
+			repoStyle.Render(result.Name),
 			statusStyle.Render(status),
-			urlStyle.Render(fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)),
+			localSymlinkStyle.Render(localSymlink),
+			globalSymlinkStyle.Render(globalSymlink),
 			errorStyle.Render(errorMsg))
-	}
-
-	// Print symlinked repositories table
-	if len(symlinkedRepos) > 0 {
-		fmt.Println()
-		fmt.Println(headerStyle.Render("Symlinked repositories:"))
-		fmt.Println() // Add a newline after the header
-
-		// Define column styles for symlink table
-		repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
-		symlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-		pathStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-
-		// Print table header
-		fmt.Printf("%s %s %s\n",
-			repoStyle.Render("📁 Repository"),
-			symlinkStyle.Render("🔗 Symlink Path"),
-			pathStyle.Render("📂 Repository Path"))
-
-		fmt.Println(strings.Repeat("-", 80)) // Separator line
-
-		// Print table rows
-		for _, repo := range symlinkedRepos {
-			fmt.Printf("%s %s %s\n",
-				repoStyle.Render(repo),
-				symlinkStyle.Render(filepath.Join(baseDir, repo)),
-				pathStyle.Render(filepath.Join(repoDir, repo)))
-		}
 	}
 
 	fmt.Println()
 	fmt.Println(headerStyle.Render("Summary of changes:"))
 	fmt.Println() // Add a newline after the header
-	totalAttempted := len(cloneResults)
-	successfulClones := len(symlinkedRepos)
-	fmt.Printf("  Total repositories attempted: %d\n", totalAttempted)
-	fmt.Printf("  Successfully cloned: %d/%d\n", successfulClones, totalAttempted)
+
+	totalRepos := len(results)
+	clonedRepos := 0
+	updatedRepos := 0
+	failedRepos := 0
+	localSymlinks := 0
+	globalSymlinks := 0
+
+	for _, result := range results {
+		if result.Cloned {
+			clonedRepos++
+		} else if result.Updated {
+			updatedRepos++
+		}
+		if result.Error != nil {
+			failedRepos++
+		}
+		if result.LocalSymlink != "" {
+			localSymlinks++
+		}
+		if result.GlobalSymlink != "" {
+			globalSymlinks++
+		}
+	}
+
+	fmt.Printf("  Total repositories processed: %d\n", totalRepos)
+	fmt.Printf("  Newly cloned: %d\n", clonedRepos)
+	fmt.Printf("  Updated: %d\n", updatedRepos)
+	fmt.Printf("  Failed operations: %d\n", failedRepos)
+	fmt.Printf("  Local symlinks created: %d\n", localSymlinks)
+	fmt.Printf("  Global symlinks created: %d\n", globalSymlinks)
 }
 
 func filterRepositories(repos []string, config *Config) []string {
@@ -750,4 +871,17 @@ func formatDiagnostics(diags hcl.Diagnostics) string {
 		}
 	}
 	return strings.Join(messages, "\n")
+}
+
+func getCacheDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	cacheDir := filepath.Join(homeDir, ".ssot", "gitspace")
+	err = os.MkdirAll(cacheDir, 0755)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cache directory: %w", err)
+	}
+	return cacheDir, nil
 }
