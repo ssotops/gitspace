@@ -31,7 +31,7 @@ func TestFilterRepositories(t *testing.T) {
 						EndsWith   *FilterConfig `hcl:"endsWith,block"`
 						StartsWith *FilterConfig `hcl:"startsWith,block"`
 						Includes   *FilterConfig `hcl:"includes,block"`
-						Names      *FilterConfig `hcl:"name,block"`
+						IsExactly  *FilterConfig `hcl:"isExactly,block"`
 						Auth       *struct {
 							Type    string `hcl:"type"`
 							KeyPath string `hcl:"keyPath"`
@@ -44,7 +44,7 @@ func TestFilterRepositories(t *testing.T) {
 						EndsWith   *FilterConfig `hcl:"endsWith,block"`
 						StartsWith *FilterConfig `hcl:"startsWith,block"`
 						Includes   *FilterConfig `hcl:"includes,block"`
-						Names      *FilterConfig `hcl:"name,block"`
+						IsExactly  *FilterConfig `hcl:"isExactly,block"`
 						Auth       *struct {
 							Type    string `hcl:"type"`
 							KeyPath string `hcl:"keyPath"`
@@ -70,7 +70,7 @@ func TestFilterRepositories(t *testing.T) {
 						EndsWith   *FilterConfig `hcl:"endsWith,block"`
 						StartsWith *FilterConfig `hcl:"startsWith,block"`
 						Includes   *FilterConfig `hcl:"includes,block"`
-						Names      *FilterConfig `hcl:"name,block"`
+						IsExactly  *FilterConfig `hcl:"isExactly,block"`
 						Auth       *struct {
 							Type    string `hcl:"type"`
 							KeyPath string `hcl:"keyPath"`
@@ -83,7 +83,7 @@ func TestFilterRepositories(t *testing.T) {
 						EndsWith   *FilterConfig `hcl:"endsWith,block"`
 						StartsWith *FilterConfig `hcl:"startsWith,block"`
 						Includes   *FilterConfig `hcl:"includes,block"`
-						Names      *FilterConfig `hcl:"name,block"`
+						IsExactly  *FilterConfig `hcl:"isExactly,block"`
 						Auth       *struct {
 							Type    string `hcl:"type"`
 							KeyPath string `hcl:"keyPath"`
@@ -109,7 +109,7 @@ func TestFilterRepositories(t *testing.T) {
 						EndsWith   *FilterConfig `hcl:"endsWith,block"`
 						StartsWith *FilterConfig `hcl:"startsWith,block"`
 						Includes   *FilterConfig `hcl:"includes,block"`
-						Names      *FilterConfig `hcl:"name,block"`
+						IsExactly  *FilterConfig `hcl:"isExactly,block"`
 						Auth       *struct {
 							Type    string `hcl:"type"`
 							KeyPath string `hcl:"keyPath"`
@@ -122,7 +122,7 @@ func TestFilterRepositories(t *testing.T) {
 						EndsWith   *FilterConfig `hcl:"endsWith,block"`
 						StartsWith *FilterConfig `hcl:"startsWith,block"`
 						Includes   *FilterConfig `hcl:"includes,block"`
-						Names      *FilterConfig `hcl:"name,block"`
+						IsExactly  *FilterConfig `hcl:"isExactly,block"`
 						Auth       *struct {
 							Type    string `hcl:"type"`
 							KeyPath string `hcl:"keyPath"`
@@ -135,7 +135,7 @@ func TestFilterRepositories(t *testing.T) {
 			expected: []string{"core-lib"},
 		},
 		{
-			name: "Filter by Names",
+			name: "Filter by IsExactly",
 			config: &Config{
 				Repositories: &struct {
 					GitSpace *struct {
@@ -148,7 +148,7 @@ func TestFilterRepositories(t *testing.T) {
 						EndsWith   *FilterConfig `hcl:"endsWith,block"`
 						StartsWith *FilterConfig `hcl:"startsWith,block"`
 						Includes   *FilterConfig `hcl:"includes,block"`
-						Names      *FilterConfig `hcl:"name,block"`
+						IsExactly  *FilterConfig `hcl:"isExactly,block"`
 						Auth       *struct {
 							Type    string `hcl:"type"`
 							KeyPath string `hcl:"keyPath"`
@@ -161,13 +161,13 @@ func TestFilterRepositories(t *testing.T) {
 						EndsWith   *FilterConfig `hcl:"endsWith,block"`
 						StartsWith *FilterConfig `hcl:"startsWith,block"`
 						Includes   *FilterConfig `hcl:"includes,block"`
-						Names      *FilterConfig `hcl:"name,block"`
+						IsExactly  *FilterConfig `hcl:"isExactly,block"`
 						Auth       *struct {
 							Type    string `hcl:"type"`
 							KeyPath string `hcl:"keyPath"`
 						} `hcl:"auth,block"`
 					}{
-						Names: &FilterConfig{Values: []string{"exact-repo-name"}},
+						IsExactly: &FilterConfig{Values: []string{"exact-repo-name"}},
 					},
 				},
 			},
@@ -215,7 +215,7 @@ func TestIntegrationEndsWith(t *testing.T) {
 				EndsWith   *FilterConfig `hcl:"endsWith,block"`
 				StartsWith *FilterConfig `hcl:"startsWith,block"`
 				Includes   *FilterConfig `hcl:"includes,block"`
-				Names      *FilterConfig `hcl:"name,block"`
+				IsExactly  *FilterConfig `hcl:"isExactly,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -231,7 +231,7 @@ func TestIntegrationEndsWith(t *testing.T) {
 				EndsWith   *FilterConfig `hcl:"endsWith,block"`
 				StartsWith *FilterConfig `hcl:"startsWith,block"`
 				Includes   *FilterConfig `hcl:"includes,block"`
-				Names      *FilterConfig `hcl:"name,block"`
+				IsExactly  *FilterConfig `hcl:"isExactly,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -280,7 +280,7 @@ func TestIntegrationIncludes(t *testing.T) {
 				EndsWith   *FilterConfig `hcl:"endsWith,block"`
 				StartsWith *FilterConfig `hcl:"startsWith,block"`
 				Includes   *FilterConfig `hcl:"includes,block"`
-				Names      *FilterConfig `hcl:"name,block"`
+				IsExactly  *FilterConfig `hcl:"isExactly,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -296,7 +296,7 @@ func TestIntegrationIncludes(t *testing.T) {
 				EndsWith   *FilterConfig `hcl:"endsWith,block"`
 				StartsWith *FilterConfig `hcl:"startsWith,block"`
 				Includes   *FilterConfig `hcl:"includes,block"`
-				Names      *FilterConfig `hcl:"name,block"`
+				IsExactly  *FilterConfig `hcl:"isExactly,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -332,7 +332,7 @@ func TestIntegrationIncludes(t *testing.T) {
 	os.RemoveAll("test_repos")
 }
 
-func TestIntegrationName(t *testing.T) {
+func TestIntegrationIsExactly(t *testing.T) {
 	config := Config{
 		Repositories: &struct {
 			GitSpace *struct {
@@ -345,7 +345,7 @@ func TestIntegrationName(t *testing.T) {
 				EndsWith   *FilterConfig `hcl:"endsWith,block"`
 				StartsWith *FilterConfig `hcl:"startsWith,block"`
 				Includes   *FilterConfig `hcl:"includes,block"`
-				Names      *FilterConfig `hcl:"name,block"`
+				IsExactly  *FilterConfig `hcl:"isExactly,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
@@ -361,15 +361,15 @@ func TestIntegrationName(t *testing.T) {
 				EndsWith   *FilterConfig `hcl:"endsWith,block"`
 				StartsWith *FilterConfig `hcl:"startsWith,block"`
 				Includes   *FilterConfig `hcl:"includes,block"`
-				Names      *FilterConfig `hcl:"name,block"`
+				IsExactly  *FilterConfig `hcl:"isExactly,block"`
 				Auth       *struct {
 					Type    string `hcl:"type"`
 					KeyPath string `hcl:"keyPath"`
 				} `hcl:"auth,block"`
 			}{
-				SCM:   "github.com",
-				Owner: "testowner",
-				Names: &FilterConfig{Values: []string{"gitspace", "ssotools"}},
+				SCM:       "github.com",
+				Owner:     "testowner",
+				IsExactly: &FilterConfig{Values: []string{"gitspace", "ssotools"}},
 			},
 		},
 	}
