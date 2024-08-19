@@ -119,58 +119,80 @@ func main() {
 		return
 	}
 
-	// Create a menu for user to choose an action
+	// Main menu loop
+	for {
+		choice := showMainMenu()
+
+		switch choice {
+		case "repositories":
+			if handleRepositoriesCommand(logger, &config) {
+				return // Exit the program if user chose to quit
+			}
+		case "sync":
+			syncLabels(logger, &config)
+		case "upgrade":
+			upgradeGitspace(logger)
+		case "quit":
+			fmt.Println("Exiting Gitspace. Goodbye!")
+			return
+		default:
+			logger.Error("Invalid choice")
+		}
+	}
+}
+
+func showMainMenu() string {
 	var choice string
-	err = huh.NewSelect[string]().
+	err := huh.NewSelect[string]().
 		Title("Choose an action").
 		Options(
 			huh.NewOption("Repositories", "repositories"),
 			huh.NewOption("Sync Labels", "sync"),
 			huh.NewOption("Upgrade Gitspace", "upgrade"),
+			huh.NewOption("Quit", "quit"),
 		).
 		Value(&choice).
 		Run()
 
 	if err != nil {
-		logger.Error("Error getting user choice", "error", err)
-		return
+		fmt.Println("Error getting user choice:", err)
+		return ""
 	}
 
-	switch choice {
-	case "repositories":
-		handleRepositoriesCommand(logger, &config)
-	case "sync":
-		syncLabels(logger, &config)
-	case "upgrade":
-		upgradeGitspace(logger)
-	default:
-		logger.Error("Invalid choice")
-	}
+	return choice
 }
 
-func handleRepositoriesCommand(logger *log.Logger, config *Config) {
-	var subChoice string
-	err := huh.NewSelect[string]().
-		Title("Choose a repositories action").
-		Options(
-			huh.NewOption("Clone Local", "clone"),
-			huh.NewOption("Sync Local", "sync"),
-		).
-		Value(&subChoice).
-		Run()
+func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
+	for {
+		var subChoice string
+		err := huh.NewSelect[string]().
+			Title("Choose a repositories action").
+			Options(
+				huh.NewOption("Clone Local", "clone"),
+				huh.NewOption("Sync Local", "sync"),
+				huh.NewOption("Go back", "back"),
+				huh.NewOption("Quit", "quit"),
+			).
+			Value(&subChoice).
+			Run()
 
-	if err != nil {
-		logger.Error("Error getting repositories sub-choice", "error", err)
-		return
-	}
+		if err != nil {
+			logger.Error("Error getting repositories sub-choice", "error", err)
+			return false
+		}
 
-	switch subChoice {
-	case "clone":
-		cloneRepositories(logger, config)
-	case "sync":
-		syncLocalRepositories(logger, config)
-	default:
-		logger.Error("Invalid repositories sub-choice")
+		switch subChoice {
+		case "clone":
+			cloneRepositories(logger, config)
+		case "sync":
+			syncLocalRepositories(logger, config)
+		case "back":
+			return false // Go back to main menu
+		case "quit":
+			return true // Exit the program
+		default:
+			logger.Error("Invalid repositories sub-choice")
+		}
 	}
 }
 
