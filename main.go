@@ -27,6 +27,7 @@ import (
 var Version string
 
 // Config represents the structure of our HCL configuration file
+// Update the Config struct
 type Config struct {
 	Repositories *struct {
 		GitSpace *struct {
@@ -39,7 +40,7 @@ type Config struct {
 			EndsWith   *FilterConfig `hcl:"endsWith,block"`
 			StartsWith *FilterConfig `hcl:"startsWith,block"`
 			Includes   *FilterConfig `hcl:"includes,block"`
-			Names      *FilterConfig `hcl:"name,block"`
+			IsExactly  *FilterConfig `hcl:"isExactly,block"`
 			Auth       *struct {
 				Type    string `hcl:"type"`
 				KeyPath string `hcl:"keyPath"`
@@ -440,7 +441,7 @@ func filterRepositories(repos []string, config *Config) []string {
 
 	for _, repo := range repos {
 		// Check exact names
-		if matchesFilter(repo, cloneConfig.Names) {
+		if matchesFilter(repo, cloneConfig.IsExactly) { // Changed from Names to IsExactly
 			filtered = append(filtered, repo)
 			continue
 		}
@@ -464,7 +465,7 @@ func filterRepositories(repos []string, config *Config) []string {
 		}
 
 		// If no filters are specified, include all repositories
-		if cloneConfig.Names == nil && cloneConfig.StartsWith == nil &&
+		if cloneConfig.IsExactly == nil && cloneConfig.StartsWith == nil && // Changed from Names to IsExactly
 			cloneConfig.EndsWith == nil && cloneConfig.Includes == nil {
 			filtered = append(filtered, repo)
 		}
@@ -578,8 +579,8 @@ func calculateLabelChanges(repos []string, config *Config) map[string][]string {
 			if matchesFilter(repo, config.Repositories.Clone.Includes) {
 				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.Includes)...)
 			}
-			if matchesFilter(repo, config.Repositories.Clone.Names) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.Names)...)
+			if matchesFilter(repo, config.Repositories.Clone.IsExactly) { // Changed from Names to IsExactly
+				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.IsExactly)...)
 			}
 		}
 
@@ -668,92 +669,11 @@ func decodeHCLFile(filename string) (Config, error) {
 	logger.Debug("Decoding HCL body")
 	decodeDiags := gohcl.DecodeBody(file.Body, nil, &config)
 	if decodeDiags.HasErrors() {
-		logger.Warn("Failed to decode new format, attempting to decode old format", "diagnostics", decodeDiags.Error())
-
-		// Try to decode using the old format
-		var oldConfig struct {
-			Repositories *struct {
-				GitSpace *struct {
-					Path string `hcl:"path"`
-				} `hcl:"gitspace,block"`
-				Labels []string `hcl:"labels,optional"`
-				Clone  *struct {
-					SCM        string   `hcl:"scm"`
-					Owner      string   `hcl:"owner"`
-					EndsWith   []string `hcl:"endsWith,optional"`
-					StartsWith []string `hcl:"startsWith,optional"`
-					Includes   []string `hcl:"includes,optional"`
-					Names      []string `hcl:"name,optional"`
-					Auth       *struct {
-						Type    string `hcl:"type"`
-						KeyPath string `hcl:"keyPath"`
-					} `hcl:"auth,block"`
-				} `hcl:"clone,block"`
-			} `hcl:"repositories,block"`
-		}
-
-		oldDecodeDiags := gohcl.DecodeBody(file.Body, nil, &oldConfig)
-		if oldDecodeDiags.HasErrors() {
-			logger.Error("Failed to decode old format config", "diagnostics", oldDecodeDiags.Error())
-			return Config{}, fmt.Errorf("failed to decode HCL: %s", formatDiagnostics(oldDecodeDiags))
-		}
-
-		// Convert old format to new format
-		config.Repositories = &struct {
-			GitSpace *struct {
-				Path string `hcl:"path"`
-			} `hcl:"gitspace,block"`
-			Labels []string `hcl:"labels,optional"`
-			Clone  *struct {
-				SCM        string        `hcl:"scm"`
-				Owner      string        `hcl:"owner"`
-				EndsWith   *FilterConfig `hcl:"endsWith,block"`
-				StartsWith *FilterConfig `hcl:"startsWith,block"`
-				Includes   *FilterConfig `hcl:"includes,block"`
-				Names      *FilterConfig `hcl:"name,block"`
-				Auth       *struct {
-					Type    string `hcl:"type"`
-					KeyPath string `hcl:"keyPath"`
-				} `hcl:"auth,block"`
-			} `hcl:"clone,block"`
-		}{
-			GitSpace: oldConfig.Repositories.GitSpace,
-			Labels:   oldConfig.Repositories.Labels,
-			Clone: &struct {
-				SCM        string        `hcl:"scm"`
-				Owner      string        `hcl:"owner"`
-				EndsWith   *FilterConfig `hcl:"endsWith,block"`
-				StartsWith *FilterConfig `hcl:"startsWith,block"`
-				Includes   *FilterConfig `hcl:"includes,block"`
-				Names      *FilterConfig `hcl:"name,block"`
-				Auth       *struct {
-					Type    string `hcl:"type"`
-					KeyPath string `hcl:"keyPath"`
-				} `hcl:"auth,block"`
-			}{
-				SCM:   oldConfig.Repositories.Clone.SCM,
-				Owner: oldConfig.Repositories.Clone.Owner,
-				EndsWith: &FilterConfig{
-					Values: oldConfig.Repositories.Clone.EndsWith,
-				},
-				StartsWith: &FilterConfig{
-					Values: oldConfig.Repositories.Clone.StartsWith,
-				},
-				Includes: &FilterConfig{
-					Values: oldConfig.Repositories.Clone.Includes,
-				},
-				Names: &FilterConfig{
-					Values: oldConfig.Repositories.Clone.Names,
-				},
-				Auth: oldConfig.Repositories.Clone.Auth,
-			},
-		}
-
-		logger.Info("Successfully decoded old format config")
-	} else {
-		logger.Info("Successfully decoded new format config")
+		logger.Error("Failed to decode config", "diagnostics", decodeDiags.Error())
+		return Config{}, fmt.Errorf("failed to decode HCL: %s", formatDiagnostics(decodeDiags))
 	}
 
+	logger.Info("Successfully decoded config")
 	logger.Debug("Config decoding completed")
 	return config, nil
 }
