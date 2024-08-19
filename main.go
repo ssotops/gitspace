@@ -203,10 +203,15 @@ func syncLocalRepositories(logger *log.Logger, config *Config) {
 }
 
 func cloneRepositories(logger *log.Logger, config *Config) {
-	// This function will contain most of the original main() function logic
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		logger.Error("Error getting cache directory", "error", err)
+		return
+	}
+
 	baseDir := config.Repositories.GitSpace.Path
-	repoDir := filepath.Join(baseDir, ".repositories")
-	err := os.MkdirAll(repoDir, 0755)
+	repoDir := filepath.Join(cacheDir, ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	err = os.MkdirAll(repoDir, 0755)
 	if err != nil {
 		logger.Error("Error creating directories", "error", err)
 		return
@@ -235,7 +240,6 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 		return
 	}
 
-	// Log the configuration
 	// Log the configuration
 	logger.Info("Configuration loaded",
 		"scm", config.Repositories.Clone.SCM,
@@ -267,8 +271,9 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 	boldStyle := lipgloss.NewStyle().Bold(true)
 
 	for _, repo := range filteredRepos {
+		repoPath := filepath.Join(repoDir, repo)
 		fmt.Printf("%s\n", boldStyle.Render(fmt.Sprintf("Cloning %s...", repo)))
-		_, err := git.PlainClone(filepath.Join(repoDir, repo), false, &git.CloneOptions{
+		_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
 			URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo),
 			Progress: os.Stdout,
 			Auth:     sshAuth,
@@ -285,17 +290,25 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 	// Create symlinks
 	for repo, err := range cloneResults {
 		if err == nil {
-			source := filepath.Join(".repositories", repo)
-			target := filepath.Join(baseDir, repo)
+			source := filepath.Join(repoDir, repo)
 
-			// Remove existing symlink if it exists
-			os.Remove(target)
-
-			err := os.Symlink(source, target)
+			// Create symlink in baseDir
+			targetBase := filepath.Join(baseDir, repo)
+			os.Remove(targetBase) // Remove existing symlink if it exists
+			err := os.Symlink(source, targetBase)
 			if err != nil {
-				logger.Error("Error creating symlink", "repo", repo, "error", err)
+				logger.Error("Error creating symlink in baseDir", "repo", repo, "error", err)
 			} else {
 				symlinkedRepos = append(symlinkedRepos, repo)
+			}
+
+			// Create symlink in cacheDir
+			targetCache := filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)
+			os.MkdirAll(filepath.Dir(targetCache), 0755) // Ensure parent directory exists
+			os.Remove(targetCache)                       // Remove existing symlink if it exists
+			err = os.Symlink(source, targetCache)
+			if err != nil {
+				logger.Error("Error creating symlink in cacheDir", "repo", repo, "error", err)
 			}
 		}
 	}
@@ -459,22 +472,27 @@ func printSummaryTable(config *Config, cloneResults map[string]error, repoDir, b
 
 		// Define column styles for symlink table
 		repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
-		symlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+		symlinkBaseStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
+		symlinkCacheStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
 		pathStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
 
 		// Print table header
-		fmt.Printf("%s %s %s\n",
+		fmt.Printf("%s %s %s %s\n",
 			repoStyle.Render("📁 Repository"),
-			symlinkStyle.Render("🔗 Symlink Path"),
+			symlinkBaseStyle.Render("🔗 Base Symlink"),
+			symlinkCacheStyle.Render("🔗 Cache Symlink"),
 			pathStyle.Render("📂 Repository Path"))
 
-		fmt.Println(strings.Repeat("-", 80)) // Separator line
+		fmt.Println(strings.Repeat("-", 110)) // Separator line
+
+		cacheDir, _ := getCacheDir() // Assuming getCacheDir() is available
 
 		// Print table rows
 		for _, repo := range symlinkedRepos {
-			fmt.Printf("%s %s %s\n",
+			fmt.Printf("%s %s %s %s\n",
 				repoStyle.Render(repo),
-				symlinkStyle.Render(filepath.Join(baseDir, repo)),
+				symlinkBaseStyle.Render(filepath.Join(baseDir, repo)),
+				symlinkCacheStyle.Render(filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)),
 				pathStyle.Render(filepath.Join(repoDir, repo)))
 		}
 	}
@@ -750,4 +768,17 @@ func formatDiagnostics(diags hcl.Diagnostics) string {
 		}
 	}
 	return strings.Join(messages, "\n")
+}
+
+func getCacheDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	cacheDir := filepath.Join(homeDir, ".ssot", "gitspace")
+	err = os.MkdirAll(cacheDir, 0755)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cache directory: %w", err)
+	}
+	return cacheDir, nil
 }
