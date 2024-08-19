@@ -99,11 +99,3 @@ func AddLabelsToRepository(owner, repo string, labels []string) error {
 
 	return nil
 }
-
-// func splitOwnerRepo(fullName string) (string, string) {
-// 	parts := strings.Split(fullName, "/")
-// 	if len(parts) == 2 {
-// 		return parts[0], parts[1]
-// 	}
-// 	return "", fullName
-// }

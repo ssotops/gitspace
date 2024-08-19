@@ -2,27 +2,46 @@ repositories {
   gitspace {
     path = "gs"
   }
+  labels = ["feature", "bug"]
   clone {
     scm = "github.com"
     owner = "ssotops"
-    # repositories starting with "git"
-    # eg. github.com/ssotops/gitspace
-    startsWith = ["git"]
+    
+    startsWith {
+      values = ["git"]
+      repository {
+        type = "gitops"
+        labels = ["backend", "core"]
+      }
+    }
 
-    # repositories ending with "space", 
-    # eg. github.com/ssotops/gitspace, github.com/ssotops/k1space, github.com/ssotops/ssotspace
-    endsWith = ["space"]
+    endsWith {
+      values = ["space"]
+      repository {
+        type = "solution"
+        labels = ["frontend", "experimental"]
+      }
+    }
 
-    # repositories containing 
-    # eg. github.com/ssotops/ssotspace
-    includes = ["sso"]
+    includes {
+      values = ["sso"]
+      repository {
+        type = "ssot"
+        labels = ["auth", "security"]
+      }
+    }
 
-    # repositories named "scmany"
-    # eg. github.com/ssotops/scmany
-    name = ["scmany"]
+    isExactly { // Changed from name to isExactly
+      values = ["scmany"]
+      repository {
+        type = "helper"
+        labels = ["utility"]
+      }
+    }
+
     auth {
       type = "ssh"
-      keyPath = "$SSOT_KEY"
+      keyPath = "$SSH_KEY_PATH"
     }
   }
 }

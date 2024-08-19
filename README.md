@@ -47,24 +47,43 @@ repositories {
   gitspace {
     path = "gs"
   }
+  labels = ["feature", "bug"]
   clone {
     scm = "github.com"
     owner = "ssotops"
-    # repositories starting with "git"
-    # eg. github.com/ssotops/gitspace
-    startsWith = ["git"]
+    
+    startsWith {
+      values = ["git"]
+      repository {
+        type = "gitops"
+        labels = ["backend", "core"]
+      }
+    }
 
-    # repositories ending with "space", 
-    # eg. github.com/ssotops/gitspace, github.com/ssotops/k1space, github.com/ssotops/ssotspace
-    endsWith = ["space"]
+    endsWith {
+      values = ["space"]
+      repository {
+        type = "solution"
+        labels = ["frontend", "experimental"]
+      }
+    }
 
-    # repositories containing 
-    # eg. github.com/ssotops/ssotspace
-    includes = ["sso"]
+    includes {
+      values = ["sso"]
+      repository {
+        type = "ssot"
+        labels = ["auth", "security"]
+      }
+    }
 
-    # repositories named "scmany"
-    # eg. github.com/ssotops/scmany
-    name = ["scmany"]
+    isExactly {
+      values = ["scmany"]
+      repository {
+        type = "helper"
+        labels = ["utility"]
+      }
+    }
+
     auth {
       type = "ssh"
       keyPath = "~/.ssh/my-key"
@@ -90,56 +109,26 @@ repositories {
 ## Configuration Explanation
 
 - `path`: The base directory where gitspace will create symlinks to your cloned repositories.
+- `labels`: Global labels to be applied to all repositories.
 - `scm`: The source control management system (e.g., "github.com").
 - `owner`: The GitHub organization or user owning the repositories.
 - `auth`: Specifies the authentication method (SSH in this case) and the path to your SSH key.
   - `keyPath`: Can be either a direct path to your SSH key (e.g., "~/.ssh/my-key") or an environment variable name prefixed with "$" (e.g., "$SSH_KEY_PATH"). If an environment variable is used, gitspace will read the key path from that variable.
-- `endsWith`: Filters repositories to clone based on their name endings (eg. `space` will match `gitspace`).
-- `startsWith`: Filters repositories to clone based on their name prefixes (eg. `git` will match `gitspace`).
-- `includes`: Filters repositories to clone based on substrings in their names (eg. `sot` will match `ssotspace`).
-- `name`: Filters repositories to clone based on exact name matches.
+- `startsWith`, `endsWith`, `includes`, `isExactly`: Filters for repository names, each containing:
+  - `values`: Array of strings to match against repository names.
+  - `repository`: Additional configuration for matched repositories.
+    - `type`: Type of the repository.
+    - `labels`: Labels specific to this repository type.
 
 ## Example Configuration
 
-```hcl
-repositories {
-  gitspace {
-    path = "gs"
-  }
-  clone {
-    scm = "github.com"
-    owner = "ssotops"
-    startsWith = ["git"]
-    endsWith = ["space"]
-    includes = ["sso"]
-    name = ["scmany"]
-    auth {
-      type = "ssh"
-      keyPath = "$SSH_KEY_PATH"  # This will read the SSH key path from the SSH_KEY_PATH environment variable
-    }
-  }
-}
-```
-
-In this example, the SSH key path is set to `$SSH_KEY_PATH`. Before running gitspace, you would set this environment variable:
-
-```bash
-export SSH_KEY_PATH=~/.ssh/my-github-key
-```
-
-Alternatively, you could specify the path directly in the configuration:
-
-```hcl
-auth {
-  type = "ssh"
-  keyPath = "~/.ssh/my-github-key"
-}
-```
+[The example configuration in the "Getting Started" section serves as a comprehensive example]
 
 ## Features
 
 - Clones multiple repositories based on specified criteria.
 - Creates symlinks for easy access to cloned repositories.
+- Applies labels to repositories based on global and specific configurations.
 - Provides a summary of cloning and symlinking operations.
 
 ## Support
