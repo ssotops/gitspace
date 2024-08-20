@@ -120,10 +120,6 @@ repositories {
     - `type`: Type of the repository.
     - `labels`: Labels specific to this repository type.
 
-## Example Configuration
-
-[The example configuration in the "Getting Started" section serves as a comprehensive example]
-
 ## Features
 
 - Clones multiple repositories based on specified criteria.
