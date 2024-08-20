@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"syscall"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -75,6 +77,10 @@ func main() {
 		Level:           log.DebugLevel,
 	})
 
+	// Set up signal handling for graceful shutdown
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
 	// Create styles for the welcome message
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -121,26 +127,36 @@ func main() {
 
 	// Main menu loop
 	for {
-		choice := showMainMenu()
-
-		switch choice {
-		case "repositories":
-			if handleRepositoriesCommand(logger, &config) {
-				return // Exit the program if user chose to quit
-			}
-		case "sync":
-			syncLabels(logger, &config)
-		case "upgrade":
-			upgradeGitspace(logger)
-		case "config":
-			handleConfigCommand(logger)
-		case "symlinks":
-			handleSymlinksCommand(logger, &config)
-		case "quit":
-			fmt.Println("Exiting Gitspace. Goodbye!")
+		select {
+		case <-signalChan:
+			fmt.Println("\nReceived interrupt signal. Exiting Gitspace...")
 			return
 		default:
-			logger.Error("Invalid choice")
+			choice := showMainMenu()
+
+			switch choice {
+			case "repositories":
+				if handleRepositoriesCommand(logger, &config) {
+					return // Exit the program if user chose to quit
+				}
+			case "sync":
+				syncLabels(logger, &config)
+			case "upgrade":
+				upgradeGitspace(logger)
+			case "config":
+				handleConfigCommand(logger)
+			case "symlinks":
+				handleSymlinksCommand(logger, &config)
+			case "quit":
+				fmt.Println("Exiting Gitspace. Goodbye!")
+				return
+			case "":
+				// User likely pressed CTRL+C, exit gracefully
+				fmt.Println("\nExiting Gitspace. Goodbye!")
+				return
+			default:
+				logger.Error("Invalid choice")
+			}
 		}
 	}
 }
@@ -151,7 +167,7 @@ func showMainMenu() string {
 		Title("Choose an action").
 		Options(
 			huh.NewOption("Repositories", "repositories"),
-			huh.NewOption("Symlinks", "symlinks"), // Add this line
+			huh.NewOption("Symlinks", "symlinks"),
 			huh.NewOption("Sync Labels", "sync"),
 			huh.NewOption("Upgrade Gitspace", "upgrade"),
 			huh.NewOption("Config", "config"),
@@ -161,6 +177,9 @@ func showMainMenu() string {
 		Run()
 
 	if err != nil {
+		if err == huh.ErrUserAborted {
+			return "" // Return empty string on CTRL+C
+		}
 		fmt.Println("Error getting user choice:", err)
 		return ""
 	}
