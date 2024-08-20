@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"syscall"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -75,6 +77,10 @@ func main() {
 		Level:           log.DebugLevel,
 	})
 
+	// Set up signal handling for graceful shutdown
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
 	// Create styles for the welcome message
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -121,24 +127,36 @@ func main() {
 
 	// Main menu loop
 	for {
-		choice := showMainMenu()
-
-		switch choice {
-		case "repositories":
-			if handleRepositoriesCommand(logger, &config) {
-				return // Exit the program if user chose to quit
-			}
-		case "sync":
-			syncLabels(logger, &config)
-		case "upgrade":
-			upgradeGitspace(logger)
-		case "config":
-			handleConfigCommand(logger)
-		case "quit":
-			fmt.Println("Exiting Gitspace. Goodbye!")
+		select {
+		case <-signalChan:
+			fmt.Println("\nReceived interrupt signal. Exiting Gitspace...")
 			return
 		default:
-			logger.Error("Invalid choice")
+			choice := showMainMenu()
+
+			switch choice {
+			case "repositories":
+				if handleRepositoriesCommand(logger, &config) {
+					return // Exit the program if user chose to quit
+				}
+			case "sync":
+				syncLabels(logger, &config)
+			case "upgrade":
+				upgradeGitspace(logger)
+			case "config":
+				handleConfigCommand(logger)
+			case "symlinks":
+				handleSymlinksCommand(logger, &config)
+			case "quit":
+				fmt.Println("Exiting Gitspace. Goodbye!")
+				return
+			case "":
+				// User likely pressed CTRL+C, exit gracefully
+				fmt.Println("\nExiting Gitspace. Goodbye!")
+				return
+			default:
+				logger.Error("Invalid choice")
+			}
 		}
 	}
 }
@@ -149,6 +167,7 @@ func showMainMenu() string {
 		Title("Choose an action").
 		Options(
 			huh.NewOption("Repositories", "repositories"),
+			huh.NewOption("Symlinks", "symlinks"),
 			huh.NewOption("Sync Labels", "sync"),
 			huh.NewOption("Upgrade Gitspace", "upgrade"),
 			huh.NewOption("Config", "config"),
@@ -158,6 +177,9 @@ func showMainMenu() string {
 		Run()
 
 	if err != nil {
+		if err == huh.ErrUserAborted {
+			return "" // Return empty string on CTRL+C
+		}
 		fmt.Println("Error getting user choice:", err)
 		return ""
 	}
@@ -884,4 +906,206 @@ func getCacheDir() (string, error) {
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
 	}
 	return cacheDir, nil
+}
+
+func handleSymlinksCommand(logger *log.Logger, config *Config) {
+	for {
+		var choice string
+		err := huh.NewSelect[string]().
+			Title("Choose a symlinks action").
+			Options(
+				huh.NewOption("Create local symlinks", "create_local"),
+				huh.NewOption("Create global symlinks", "create_global"),
+				huh.NewOption("Delete local symlinks", "delete_local"),
+				huh.NewOption("Delete global symlinks", "delete_global"),
+				huh.NewOption("Go back", "back"),
+			).
+			Value(&choice).
+			Run()
+
+		if err != nil {
+			logger.Error("Error getting symlinks sub-choice", "error", err)
+			return
+		}
+
+		switch choice {
+		case "create_local":
+			createLocalSymlinks(logger, config)
+		case "create_global":
+			createGlobalSymlinks(logger, config)
+		case "delete_local":
+			deleteLocalSymlinks(logger, config)
+		case "delete_global":
+			deleteGlobalSymlinks(logger, config)
+		case "back":
+			return
+		default:
+			logger.Error("Invalid symlinks sub-choice")
+		}
+	}
+}
+
+func createLocalSymlinks(logger *log.Logger, config *Config) {
+	changes := make(map[string]string)
+	baseDir := config.Repositories.GitSpace.Path
+	repoDir := filepath.Join(getCacheDirOrDefault(logger), ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+
+	err := filepath.Walk(repoDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && info.Name() != filepath.Base(repoDir) {
+			relPath, _ := filepath.Rel(repoDir, path)
+			symlink := filepath.Join(baseDir, relPath) // Remove "gs" from this path
+			err := os.MkdirAll(filepath.Dir(symlink), 0755)
+			if err != nil {
+				logger.Error("Error creating directory for local symlink", "path", symlink, "error", err)
+				return nil
+			}
+			err = os.Symlink(path, symlink)
+			if err != nil {
+				logger.Error("Error creating local symlink", "path", path, "error", err)
+			} else {
+				changes[symlink] = path
+			}
+			return filepath.SkipDir // Skip subdirectories
+		}
+		return nil
+	})
+
+	if err != nil {
+		logger.Error("Error walking through repository directory", "error", err)
+	}
+
+	printSymlinkSummary("Created local symlinks", changes)
+}
+
+func createGlobalSymlinks(logger *log.Logger, config *Config) {
+	changes := make(map[string]string)
+	globalDir, err := getGlobalSymlinkDir(config)
+	if err != nil {
+		logger.Error("Error getting global symlink directory", "error", err)
+		return
+	}
+	repoDir := filepath.Join(getCacheDirOrDefault(logger), ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+
+	err = filepath.Walk(repoDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && info.Name() != filepath.Base(repoDir) {
+			relPath, _ := filepath.Rel(repoDir, path)
+			symlink := filepath.Join(globalDir, relPath)
+			err := os.MkdirAll(filepath.Dir(symlink), 0755)
+			if err != nil {
+				logger.Error("Error creating directory for global symlink", "path", symlink, "error", err)
+				return nil
+			}
+			err = os.Symlink(path, symlink)
+			if err != nil {
+				logger.Error("Error creating global symlink", "path", path, "error", err)
+			} else {
+				changes[symlink] = path
+			}
+			return filepath.SkipDir // Skip subdirectories
+		}
+		return nil
+	})
+
+	if err != nil {
+		logger.Error("Error walking through repository directory", "error", err)
+	}
+
+	printSymlinkSummary("Created global symlinks", changes)
+}
+
+func deleteLocalSymlinks(logger *log.Logger, config *Config) {
+	changes := make(map[string]string)
+	baseDir := config.Repositories.GitSpace.Path
+
+	err := filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			realPath, _ := os.Readlink(path)
+			err := os.Remove(path)
+			if err != nil {
+				logger.Error("Error deleting local symlink", "path", path, "error", err)
+			} else {
+				changes[path] = realPath
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		logger.Error("Error walking through local directory", "error", err)
+	}
+
+	printSymlinkSummary("Deleted local symlinks", changes)
+}
+
+func deleteGlobalSymlinks(logger *log.Logger, config *Config) {
+	changes := make(map[string]string)
+	globalDir, err := getGlobalSymlinkDir(config)
+	if err != nil {
+		logger.Error("Error getting global symlink directory", "error", err)
+		return
+	}
+
+	err = filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			realPath, _ := os.Readlink(path)
+			err := os.Remove(path)
+			if err != nil {
+				logger.Error("Error deleting global symlink", "path", path, "error", err)
+			} else {
+				changes[path] = realPath
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		logger.Error("Error walking through global directory", "error", err)
+	}
+
+	printSymlinkSummary("Deleted global symlinks", changes)
+}
+
+func getGlobalSymlinkDir(config *Config) (string, error) {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get cache directory: %w", err)
+	}
+	return filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner), nil
+}
+
+func printSymlinkSummary(title string, changes map[string]string) {
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FFFF"))
+	symlinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF"))
+	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+
+	fmt.Println(titleStyle.Render(fmt.Sprintf("\n%s Summary:", title)))
+	if len(changes) == 0 {
+		fmt.Println("No changes were made.")
+	} else {
+		for symlink, target := range changes {
+			fmt.Printf("  %s -> %s\n", symlinkStyle.Render(symlink), pathStyle.Render(target))
+		}
+	}
+	fmt.Printf("\nTotal changes: %d\n", len(changes))
+}
+
+func getCacheDirOrDefault(logger *log.Logger) string {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		logger.Error("Error getting cache directory", "error", err)
+		return filepath.Join(os.TempDir(), ".ssot", "gitspace")
+	}
+	return cacheDir
 }
