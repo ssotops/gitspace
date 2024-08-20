@@ -245,8 +245,8 @@ func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
 		err := huh.NewSelect[string]().
 			Title("Choose a repositories action").
 			Options(
-				huh.NewOption("Clone Local", "clone"),
-				huh.NewOption("Sync Local", "sync"),
+				huh.NewOption("Clone", "clone"),
+				huh.NewOption("Sync", "sync"),
 				huh.NewOption("Go back", "back"),
 				huh.NewOption("Quit", "quit"),
 			).
@@ -262,7 +262,7 @@ func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
 		case "clone":
 			cloneRepositories(logger, config)
 		case "sync":
-			syncLocalRepositories(logger, config)
+			syncRepositories(logger, config)
 		case "back":
 			return false // Go back to main menu
 		case "quit":
@@ -273,10 +273,81 @@ func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
 	}
 }
 
-func syncLocalRepositories(logger *log.Logger, config *Config) {
-	logger.Info("Syncing local repositories...")
-	// Placeholder implementation
-	fmt.Println("Sync Local functionality is not yet implemented.")
+func syncRepositories(logger *log.Logger, config *Config) {
+	logger.Info("Syncing repositories...")
+
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		logger.Error("Error getting cache directory", "error", err)
+		return
+	}
+
+	repoDir := filepath.Join(cacheDir, ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+
+	// Setup SSH auth
+	sshKeyPath, err := getSSHKeyPath(config.Repositories.Clone.Auth.KeyPath)
+	if err != nil {
+		logger.Error("Error getting SSH key path", "error", err)
+		return
+	}
+	sshKeyPath, err = homedir.Expand(sshKeyPath)
+	if err != nil {
+		logger.Error("Error expanding SSH key path", "error", err)
+		return
+	}
+	sshAuth, err := ssh.NewPublicKeysFromFile("git", sshKeyPath, "")
+	if err != nil {
+		logger.Error("Error setting up SSH auth", "error", err)
+		return
+	}
+
+	// Get list of repositories to sync
+	repos, err := lib.GetRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	if err != nil {
+		logger.Error("Error fetching repositories", "error", err)
+		return
+	}
+
+	// Filter repositories based on criteria
+	filteredRepos := filterRepositories(repos, config)
+
+	results := make(map[string]*RepoResult)
+
+	for _, repo := range filteredRepos {
+		repoPath := filepath.Join(repoDir, repo)
+		result := &RepoResult{Name: repo}
+		results[repo] = result
+
+		// Check if the repository exists locally
+		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+			logger.Info("Repository not found locally, skipping", "repo", repo)
+			continue
+		}
+
+		// Open the existing repository
+		r, err := git.PlainOpen(repoPath)
+		if err != nil {
+			result.Error = err
+			logger.Error("Failed to open existing repository", "repo", repo, "error", err)
+			continue
+		}
+
+		// Fetch updates
+		err = r.Fetch(&git.FetchOptions{
+			Auth:     sshAuth,
+			Progress: os.Stdout,
+		})
+		if err != nil && err != git.NoErrAlreadyUpToDate {
+			result.Error = err
+			logger.Error("Fetch failed", "repo", repo, "error", err)
+		} else {
+			result.Updated = true
+			logger.Info("Fetch successful", "repo", repo)
+		}
+	}
+
+	// Print summary table
+	printSummaryTable(config, results, repoDir)
 }
 
 func cloneRepositories(logger *log.Logger, config *Config) {
