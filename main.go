@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -93,7 +94,7 @@ func main() {
 		Foreground(lipgloss.Color("#87CEEB"))
 
 	// Get current version
-	version := getCurrentVersion()
+	version, _ := getCurrentVersion()
 
 	// Print welcome message
 	fmt.Println(titleStyle.Render("Welcome to Gitspace!"))
@@ -141,10 +142,8 @@ func main() {
 				}
 			case "sync":
 				syncLabels(logger, &config)
-			case "upgrade":
-				upgradeGitspace(logger)
-			case "config":
-				handleConfigCommand(logger)
+			case "gitspace":
+				handleGitspaceCommand(logger, &config)
 			case "symlinks":
 				handleSymlinksCommand(logger, &config)
 			case "quit":
@@ -169,8 +168,7 @@ func showMainMenu() string {
 			huh.NewOption("Repositories", "repositories"),
 			huh.NewOption("Symlinks", "symlinks"),
 			huh.NewOption("Sync Labels", "sync"),
-			huh.NewOption("Upgrade Gitspace", "upgrade"),
-			huh.NewOption("Config", "config"),
+			huh.NewOption("Gitspace", "gitspace"),
 			huh.NewOption("Quit", "quit"),
 		).
 		Value(&choice).
@@ -185,6 +183,92 @@ func showMainMenu() string {
 	}
 
 	return choice
+}
+
+func handleGitspaceCommand(logger *log.Logger, config *Config) {
+	for {
+		var choice string
+		err := huh.NewSelect[string]().
+			Title("Choose a Gitspace action").
+			Options(
+				huh.NewOption("Upgrade Gitspace", "upgrade"),
+				huh.NewOption("Print Config Paths", "config_paths"),
+				huh.NewOption("Print Version Info", "version_info"),
+				huh.NewOption("Go back", "back"),
+			).
+			Value(&choice).
+			Run()
+
+		if err != nil {
+			logger.Error("Error getting Gitspace sub-choice", "error", err)
+			return
+		}
+
+		switch choice {
+		case "upgrade":
+			upgradeGitspace(logger)
+		case "config_paths":
+			handleConfigPathsCommand(logger)
+		case "version_info":
+			printVersionInfo(logger)
+		case "back":
+			return
+		default:
+			logger.Error("Invalid Gitspace sub-choice")
+		}
+	}
+}
+
+func handleConfigPathsCommand(logger *log.Logger) {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		logger.Error("Error getting cache directory", "error", err)
+		return
+	}
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FFFF"))
+	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+	symlinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF"))
+
+	fmt.Println(titleStyle.Render("\n📂 Cache Directory:"))
+	fmt.Printf("   %s\n\n", pathStyle.Render(fmt.Sprintf("cd %s", cacheDir)))
+
+	fmt.Println(titleStyle.Render("📄 Gitspace Config Files:"))
+	err = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".hcl" {
+			fmt.Printf("   %s\n", pathStyle.Render(path))
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Error("Error walking through cache directory", "error", err)
+	}
+
+	fmt.Println(titleStyle.Render("\n🔗 Gitspace Config Symlinks:"))
+	err = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			realPath, err := os.Readlink(path)
+			if err != nil {
+				logger.Error("Error reading symlink", "path", path, "error", err)
+				return nil
+			}
+			if filepath.Ext(realPath) == ".hcl" {
+				fmt.Printf("   %s -> %s\n", symlinkStyle.Render(path), pathStyle.Render(realPath))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Error("Error walking through cache directory for symlinks", "error", err)
+	}
+
+	fmt.Println() // Add an extra newline for spacing
 }
 
 func handleConfigCommand(logger *log.Logger) {
@@ -612,6 +696,39 @@ func downloadBinary(url string) (string, error) {
 	return tempFile.Name(), nil
 }
 
+func printVersionInfo(logger *log.Logger) {
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FFFF"))
+	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+
+	// Local install information
+	localVersion, localCommit := getCurrentVersion()
+
+	fmt.Println(titleStyle.Render("\nLocal Install:"))
+	fmt.Printf("Version: %s\n", infoStyle.Render(localVersion))
+	if localCommit != "" {
+		fmt.Printf("Commit Hash: %s\n", infoStyle.Render(localCommit))
+	}
+
+	// Remote/latest version information
+	remoteRelease, err := lib.GetLatestGitHubRelease("ssotops", "gitspace")
+	if err != nil {
+		logger.Error("Error fetching remote version info", "error", err)
+		return
+	}
+
+	fmt.Println(titleStyle.Render("\nRemote/Latest Version:"))
+	fmt.Printf("Version: %s\n", infoStyle.Render(remoteRelease.TagName))
+	fmt.Printf("Released: %s\n", infoStyle.Render(remoteRelease.PublishedAt.Format(time.RFC3339)))
+
+	// Extract commit hash from release body if available
+	commitHash := lib.ExtractCommitHash(remoteRelease.Body)
+	if commitHash != "" {
+		fmt.Printf("Commit Hash: %s\n", infoStyle.Render(commitHash))
+	} else {
+		fmt.Println("Commit Hash: Not available")
+	}
+}
+
 func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir string) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	fmt.Println(headerStyle.Render("\nRepository Processing Summary:"))
@@ -756,29 +873,29 @@ func matchesFilter(repo string, filter *FilterConfig) bool {
 	return false
 }
 
-func getCurrentVersion() string {
+func getCurrentVersion() (string, string) {
 	// Check if Version is set (injected during build)
 	if Version != "" {
-		return Version
+		return Version, ""
 	}
 
 	// Try to get the git commit hash
 	hash, err := getGitCommitHash()
 	if err == nil && hash != "" {
-		return hash[:7] // Return first 7 characters of the git commit hash
+		return hash[:7], hash // Return first 7 characters as version, full hash as commit
 	}
 
 	// If git commit hash is not available, try to get it from build info
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
 			if setting.Key == "vcs.revision" {
-				return setting.Value[:7] // Return first 7 characters of the git commit hash
+				return setting.Value[:7], setting.Value
 			}
 		}
 	}
 
 	// If all else fails, return "unknown"
-	return "unknown"
+	return "unknown", ""
 }
 
 func getGitCommitHash() (string, error) {

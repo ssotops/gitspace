@@ -3,15 +3,54 @@
 package lib
 
 import (
+  "encoding/json"
 	"context"
 	"fmt"
 	"os"
 	"strings"
+  "net/http"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/google/go-github/v39/github"
 	"golang.org/x/oauth2"
 )
+
+// GitHubRelease represents the structure of a GitHub release
+type GitHubRelease struct {
+	TagName     string    `json:"tag_name"`
+	PublishedAt time.Time `json:"published_at"`
+	Body        string    `json:"body"`
+}
+
+// GetLatestGitHubRelease fetches the latest release information from GitHub
+func GetLatestGitHubRelease(owner, repo string) (*GitHubRelease, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var release GitHubRelease
+	err = json.NewDecoder(resp.Body).Decode(&release)
+	if err != nil {
+		return nil, err
+	}
+
+	return &release, nil
+}
+
+// ExtractCommitHash attempts to extract the commit hash from the release body
+func ExtractCommitHash(releaseBody string) string {
+	lines := strings.Split(releaseBody, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Commit:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "Commit:"))
+		}
+	}
+	return ""
+}
 
 func FetchGitHubRepositories(owner string) ([]string, error) {
 	ctx := context.Background()
