@@ -509,6 +509,7 @@ func syncRepositories(logger *log.Logger, config *Config) {
 	}
 
 	repoDir := filepath.Join(cacheDir, ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	baseDir := config.Repositories.GitSpace.Path
 
 	// Setup SSH auth
 	sshKeyPath, err := getSSHKeyPath(config.Repositories.Clone.Auth.KeyPath)
@@ -569,6 +570,24 @@ func syncRepositories(logger *log.Logger, config *Config) {
 		} else {
 			result.Updated = true
 			logger.Info("Fetch successful", "repo", repo)
+		}
+
+		// Create local symlink
+		localSymlinkPath := filepath.Join(baseDir, repo)
+		err = createSymlink(repoPath, localSymlinkPath)
+		if err != nil {
+			logger.Error("Error creating local symlink", "repo", repo, "error", err)
+		} else {
+			result.LocalSymlink = localSymlinkPath
+		}
+
+		// Create global symlink
+		globalSymlinkPath := filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)
+		err = createSymlink(repoPath, globalSymlinkPath)
+		if err != nil {
+			logger.Error("Error creating global symlink", "repo", repo, "error", err)
+		} else {
+			result.GlobalSymlink = globalSymlinkPath
 		}
 	}
 
@@ -883,61 +902,40 @@ func printVersionInfo(logger *log.Logger) {
 
 func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir string) {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+	repoNameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
+	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+
 	fmt.Println(headerStyle.Render("\nRepository Processing Summary:"))
-	fmt.Println() // Add a newline after the header
+	fmt.Println()
 
-	// Define column styles
-	repoStyle := lipgloss.NewStyle().Width(20).Align(lipgloss.Left)
-	statusStyle := lipgloss.NewStyle().Width(15).Align(lipgloss.Left)
-	localSymlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-	globalSymlinkStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-	errorStyle := lipgloss.NewStyle().Width(30).Align(lipgloss.Left)
-
-	// Print table header
-	fmt.Printf("%s %s %s %s %s\n",
-		repoStyle.Render("📁 Repository"),
-		statusStyle.Render("✅ Status"),
-		localSymlinkStyle.Render("🔗 Local Symlink"),
-		globalSymlinkStyle.Render("🔗 Global Symlink"),
-		errorStyle.Render("❌ Error"))
-
-	fmt.Println(strings.Repeat("-", 125)) // Separator line
-
-	// Print table rows
 	for _, result := range results {
+		fmt.Println(repoNameStyle.Render(result.Name))
+		fmt.Println()
+
 		status := "No changes"
-		if result.Cloned {
+		statusEmoji := "✅"
+		if result.Error != nil {
+			status = "Failed"
+			statusEmoji = "❌"
+		} else if result.Cloned {
 			status = "Cloned"
 		} else if result.Updated {
 			status = "Updated"
 		}
 
-		localSymlink := "-"
-		if result.LocalSymlink != "" {
-			localSymlink = result.LocalSymlink
-		}
+		fmt.Println(infoStyle.Render(fmt.Sprintf("%s Status: %s", statusEmoji, status)))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("🔗 Local Symlink: %s", result.LocalSymlink)))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("🌐 Global Symlink: %s", result.GlobalSymlink)))
 
-		globalSymlink := "-"
-		if result.GlobalSymlink != "" {
-			globalSymlink = result.GlobalSymlink
-		}
-
-		errorMsg := "-"
 		if result.Error != nil {
-			errorMsg = result.Error.Error()
+			fmt.Println(infoStyle.Render(fmt.Sprintf("❌ Error: %s", result.Error)))
 		}
 
-		fmt.Printf("%s %s %s %s %s\n",
-			repoStyle.Render(result.Name),
-			statusStyle.Render(status),
-			localSymlinkStyle.Render(localSymlink),
-			globalSymlinkStyle.Render(globalSymlink),
-			errorStyle.Render(errorMsg))
+		fmt.Println() // Add an empty line between repositories
 	}
 
-	fmt.Println()
 	fmt.Println(headerStyle.Render("Summary of changes:"))
-	fmt.Println() // Add a newline after the header
+	fmt.Println()
 
 	totalRepos := len(results)
 	clonedRepos := 0
@@ -947,13 +945,12 @@ func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir s
 	globalSymlinks := 0
 
 	for _, result := range results {
-		if result.Cloned {
+		if result.Error != nil {
+			failedRepos++
+		} else if result.Cloned {
 			clonedRepos++
 		} else if result.Updated {
 			updatedRepos++
-		}
-		if result.Error != nil {
-			failedRepos++
 		}
 		if result.LocalSymlink != "" {
 			localSymlinks++
@@ -963,12 +960,13 @@ func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir s
 		}
 	}
 
-	fmt.Printf("  Total repositories processed: %d\n", totalRepos)
-	fmt.Printf("  Newly cloned: %d\n", clonedRepos)
-	fmt.Printf("  Updated: %d\n", updatedRepos)
-	fmt.Printf("  Failed operations: %d\n", failedRepos)
-	fmt.Printf("  Local symlinks created: %d\n", localSymlinks)
-	fmt.Printf("  Global symlinks created: %d\n", globalSymlinks)
+	summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Total repositories processed: %d", totalRepos)))
+	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Newly cloned: %d", clonedRepos)))
+	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Updated: %d", updatedRepos)))
+	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Failed operations: %d", failedRepos)))
+	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Local symlinks created: %d", localSymlinks)))
+	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Global symlinks created: %d", globalSymlinks)))
 }
 
 func filterRepositories(repos []string, config *Config) []string {
