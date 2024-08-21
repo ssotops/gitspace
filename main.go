@@ -23,8 +23,10 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/mitchellh/go-homedir"
 	"github.com/ssotspace/gitspace/lib"
+	"github.com/zclconf/go-cty/cty"
 )
 
 var Version string
@@ -57,6 +59,146 @@ type FilterConfig struct {
 		Type   string   `hcl:"type"`
 		Labels []string `hcl:"labels"`
 	} `hcl:"repository,block"`
+}
+
+type IndexHCL struct {
+	LastUpdated  string                     `hcl:"lastUpdated"`
+	Repositories map[string]SCMRepositories `hcl:"repositories"`
+}
+
+type SCMRepositories struct {
+	Owners map[string]OwnerRepositories `hcl:"owners"`
+}
+
+type OwnerRepositories struct {
+	Repos map[string]RepoInfo `hcl:"repos"`
+}
+
+type RepoInfo struct {
+	ConfigPath string    `hcl:"configPath"`
+	BackupPath string    `hcl:"backupPath"`
+	LastCloned time.Time `hcl:"lastCloned"`
+	LastSynced time.Time `hcl:"lastSynced"`
+}
+
+func updateIndexHCL(logger *log.Logger, config *Config, repoResults map[string]*RepoResult) error {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return fmt.Errorf("failed to get cache directory: %w", err)
+	}
+
+	indexPath := filepath.Join(cacheDir, "index.hcl")
+	configsDir := filepath.Join(cacheDir, ".configs")
+
+	// Ensure .configs directory exists
+	if err := os.MkdirAll(configsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .configs directory: %w", err)
+	}
+
+	// Create a new empty HCL file
+	f := hclwrite.NewEmptyFile()
+	rootBody := f.Body()
+
+	// Add lastUpdated
+	now := time.Now()
+	rootBody.SetAttributeValue("lastUpdated", cty.StringVal(now.Format(time.RFC3339)))
+
+	// Create repositories block
+	reposBlock := rootBody.AppendNewBlock("repositories", nil)
+	reposBody := reposBlock.Body()
+
+	scm := config.Repositories.Clone.SCM
+	owner := config.Repositories.Clone.Owner
+
+	// Create SCM block
+	scmBlock := reposBody.AppendNewBlock(scm, nil)
+	scmBody := scmBlock.Body()
+
+	// Create owner block
+	ownerBlock := scmBody.AppendNewBlock("owners", nil)
+	ownerBody := ownerBlock.Body()
+
+	// Create repos block
+	reposBlock = ownerBody.AppendNewBlock(owner, nil)
+	reposBody = reposBlock.Body()
+
+	// Get the current working directory
+	pwd, err := os.Getwd()
+	if err != nil {
+		logger.Error("Failed to get current working directory", "error", err)
+		pwd = "" // Use empty string if we can't get the current directory
+	}
+
+	// Read the original config file once
+	originalConfigPath := filepath.Join(pwd, "gs.hcl") // Assuming the config file is always named gs.hcl
+	originalConfigContent, err := os.ReadFile(originalConfigPath)
+	if err != nil {
+		logger.Error("Failed to read original config file", "path", originalConfigPath, "error", err)
+		// Continue execution, but log the error
+	}
+
+	// Create a single backup file for all repositories
+	backupFileName := fmt.Sprintf("%s_%s_%s.hcl", scm, owner, now.Format("20060102_150405"))
+	backupPath := filepath.Join(configsDir, backupFileName)
+
+	// Create backup file
+	if len(originalConfigContent) > 0 {
+		if err := os.WriteFile(backupPath, originalConfigContent, 0644); err != nil {
+			logger.Error("Failed to write config backup", "path", backupPath, "error", err)
+			// Continue execution, but log the error
+		} else {
+			logger.Info("Created backup config file", "path", backupPath)
+		}
+	} else {
+		logger.Warn("Skipped creating backup file due to empty original config")
+	}
+
+	for repo, result := range repoResults {
+		// Create repo block
+		repoBlock := reposBody.AppendNewBlock(repo, nil)
+		repoBody := repoBlock.Body()
+
+		repoBody.SetAttributeValue("configPath", cty.StringVal(originalConfigPath))
+		repoBody.SetAttributeValue("backupPath", cty.StringVal(backupPath))
+
+		if result.Cloned {
+			repoBody.SetAttributeValue("lastCloned", cty.StringVal(now.Format(time.RFC3339)))
+		}
+		if result.Updated {
+			repoBody.SetAttributeValue("lastSynced", cty.StringVal(now.Format(time.RFC3339)))
+		}
+
+		// Add repository type
+		repoType := getRepoType(config, repo)
+		repoBody.SetAttributeValue("type", cty.StringVal(repoType))
+
+		// Add metadata
+		metadataBlock := repoBody.AppendNewBlock("metadata", nil)
+		metadataBody := metadataBlock.Body()
+
+		// Set url (formerly URI)
+		url := fmt.Sprintf("https://%s/%s/%s", scm, owner, repo)
+		metadataBody.SetAttributeValue("url", cty.StringVal(url))
+
+		// Set labels (lowercase)
+		labels := getRepoLabels(config, repo)
+		labelsVal := make([]cty.Value, len(labels))
+		for i, label := range labels {
+			labelsVal[i] = cty.StringVal(label)
+		}
+		metadataBody.SetAttributeValue("labels", cty.ListVal(labelsVal))
+
+		// RepoType removed as requested
+	}
+
+	// Write updated index.hcl
+	indexContent := f.Bytes()
+	if err := os.WriteFile(indexPath, indexContent, 0644); err != nil {
+		return fmt.Errorf("failed to write index.hcl: %w", err)
+	}
+
+	logger.Info("Successfully updated index.hcl")
+	return nil
 }
 
 func getSSHKeyPath(configPath string) (string, error) {
@@ -430,6 +572,11 @@ func syncRepositories(logger *log.Logger, config *Config) {
 		}
 	}
 
+	err = updateIndexHCL(logger, config, results)
+	if err != nil {
+		logger.Error("Failed to update index.hcl", "error", err)
+	}
+
 	// Print summary table
 	printSummaryTable(config, results, repoDir)
 }
@@ -563,6 +710,11 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 		}
 
 		fmt.Println() // Add a newline after each repository operation
+	}
+
+	err = updateIndexHCL(logger, config, results)
+	if err != nil {
+		logger.Error("Failed to update index.hcl", "error", err)
 	}
 
 	// Print summary table
@@ -1296,4 +1448,40 @@ func getCacheDirOrDefault(logger *log.Logger) string {
 		return filepath.Join(os.TempDir(), ".ssot", "gitspace")
 	}
 	return cacheDir
+}
+
+func getRepoType(config *Config, repo string) string {
+	if matchesFilter(repo, config.Repositories.Clone.StartsWith) {
+		return config.Repositories.Clone.StartsWith.Repository.Type
+	}
+	if matchesFilter(repo, config.Repositories.Clone.EndsWith) {
+		return config.Repositories.Clone.EndsWith.Repository.Type
+	}
+	if matchesFilter(repo, config.Repositories.Clone.Includes) {
+		return config.Repositories.Clone.Includes.Repository.Type
+	}
+	if matchesFilter(repo, config.Repositories.Clone.IsExactly) {
+		return config.Repositories.Clone.IsExactly.Repository.Type
+	}
+	return "default" // or any default type you prefer
+}
+
+func getRepoLabels(config *Config, repo string) []string {
+	var labels []string
+	labels = append(labels, config.Repositories.Labels...)
+
+	if matchesFilter(repo, config.Repositories.Clone.StartsWith) {
+		labels = append(labels, config.Repositories.Clone.StartsWith.Repository.Labels...)
+	}
+	if matchesFilter(repo, config.Repositories.Clone.EndsWith) {
+		labels = append(labels, config.Repositories.Clone.EndsWith.Repository.Labels...)
+	}
+	if matchesFilter(repo, config.Repositories.Clone.Includes) {
+		labels = append(labels, config.Repositories.Clone.Includes.Repository.Labels...)
+	}
+	if matchesFilter(repo, config.Repositories.Clone.IsExactly) {
+		labels = append(labels, config.Repositories.Clone.IsExactly.Repository.Labels...)
+	}
+
+	return removeDuplicates(labels)
 }
