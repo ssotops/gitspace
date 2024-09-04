@@ -154,6 +154,11 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 func syncRepositories(logger *log.Logger, config *Config) {
 	logger.Info("Syncing repositories...")
 
+	if config == nil || config.Repositories == nil || config.Repositories.Clone == nil {
+		logger.Error("No valid config loaded. Please load a config file first.")
+		return
+	}
+
 	cacheDir, err := getCacheDir()
 	if err != nil {
 		logger.Error("Error getting cache directory", "error", err)
@@ -169,11 +174,13 @@ func syncRepositories(logger *log.Logger, config *Config) {
 		logger.Error("Error getting SSH key path", "error", err)
 		return
 	}
+
 	sshKeyPath, err = homedir.Expand(sshKeyPath)
 	if err != nil {
 		logger.Error("Error expanding SSH key path", "error", err)
 		return
 	}
+
 	sshAuth, err := ssh.NewPublicKeysFromFile("git", sshKeyPath, "")
 	if err != nil {
 		logger.Error("Error setting up SSH auth", "error", err)

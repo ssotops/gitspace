@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-  "os"
-  "path/filepath"
+	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -53,18 +53,18 @@ func showMainMenu() string {
 	return choice
 }
 
-func handleMainMenu(logger *log.Logger, config *Config) bool {
+func handleMainMenu(logger *log.Logger, config **Config) bool {
 	choice := showMainMenu()
 
 	switch choice {
 	case "repositories":
-		return handleRepositoriesCommand(logger, config)
+		return handleRepositoriesCommand(logger, *config)
 	case "sync":
-		syncLabels(logger, config)
+		syncLabels(logger, *config)
 	case "gitspace":
 		handleGitspaceCommand(logger, config)
 	case "symlinks":
-		handleSymlinksCommand(logger, config)
+		handleSymlinksCommand(logger, *config)
 	case "quit":
 		fmt.Println("Exiting Gitspace. Goodbye!")
 		return true
@@ -80,6 +80,9 @@ func handleMainMenu(logger *log.Logger, config *Config) bool {
 }
 
 func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
+	if !ensureConfig(logger, &config) {
+		return false
+	}
 	for {
 		var subChoice string
 		err := huh.NewSelect[string]().
@@ -304,74 +307,130 @@ func handleConfigCommand(logger *log.Logger) {
 	fmt.Println() // Add an extra newline for spacing
 }
 
+func handleGitspaceCommand(logger *log.Logger, config **Config) {
+	for {
+		var choice string
+		err := huh.NewSelect[string]().
+			Title("Choose a Gitspace action").
+			Options(
+				huh.NewOption("Upgrade Gitspace", "upgrade"),
+				huh.NewOption("Print Config Paths", "config_paths"),
+				huh.NewOption("Print Version Info", "version_info"),
+				huh.NewOption("Load Config", "load_config"),
+				huh.NewOption("Go back", "back"),
+			).
+			Value(&choice).
+			Run()
 
-func handleGitspaceCommand(logger *log.Logger, config *Config) {
-    for {
-        var choice string
-        err := huh.NewSelect[string]().
-            Title("Choose a Gitspace action").
-            Options(
-                huh.NewOption("Upgrade Gitspace", "upgrade"),
-                huh.NewOption("Print Config Paths", "config_paths"),
-                huh.NewOption("Print Version Info", "version_info"),
-                huh.NewOption("Go back", "back"),
-            ).
-            Value(&choice).
-            Run()
+		if err != nil {
+			logger.Error("Error getting Gitspace sub-choice", "error", err)
+			return
+		}
 
-        if err != nil {
-            logger.Error("Error getting Gitspace sub-choice", "error", err)
-            return
-        }
-
-        switch choice {
-        case "upgrade":
-            upgradeGitspace(logger)
-        case "config_paths":
-            handleConfigPathsCommand(logger)
-        case "version_info":
-            printVersionInfo(logger)
-        case "back":
-            return
-        default:
-            logger.Error("Invalid Gitspace sub-choice")
-        }
-    }
+		switch choice {
+		case "upgrade":
+			upgradeGitspace(logger)
+		case "config_paths":
+			handleConfigPathsCommand(logger)
+		case "version_info":
+			printVersionInfo(logger)
+		case "load_config":
+			newConfig, err := getConfigFromUser(logger)
+			if err != nil {
+				logger.Error("Error loading config", "error", err)
+			} else {
+				*config = newConfig // This line is changed
+				if newConfig != nil && newConfig.Repositories != nil && newConfig.Repositories.GitSpace != nil {
+					logger.Info("Config loaded successfully", "path", newConfig.Repositories.GitSpace.Path)
+				} else {
+					logger.Info("No config file loaded")
+				}
+			}
+		case "back":
+			return
+		default:
+			logger.Error("Invalid Gitspace sub-choice")
+		}
+	}
 }
 
 func handleSymlinksCommand(logger *log.Logger, config *Config) {
-    for {
-        var choice string
-        err := huh.NewSelect[string]().
-            Title("Choose a symlinks action").
-            Options(
-                huh.NewOption("Create local symlinks", "create_local"),
-                huh.NewOption("Create global symlinks", "create_global"),
-                huh.NewOption("Delete local symlinks", "delete_local"),
-                huh.NewOption("Delete global symlinks", "delete_global"),
-                huh.NewOption("Go back", "back"),
-            ).
-            Value(&choice).
-            Run()
+	if !ensureConfig(logger, &config) {
+		return
+	}
+	for {
+		var choice string
+		err := huh.NewSelect[string]().
+			Title("Choose a symlinks action").
+			Options(
+				huh.NewOption("Create local symlinks", "create_local"),
+				huh.NewOption("Create global symlinks", "create_global"),
+				huh.NewOption("Delete local symlinks", "delete_local"),
+				huh.NewOption("Delete global symlinks", "delete_global"),
+				huh.NewOption("Go back", "back"),
+			).
+			Value(&choice).
+			Run()
 
-        if err != nil {
-            logger.Error("Error getting symlinks sub-choice", "error", err)
-            return
-        }
+		if err != nil {
+			logger.Error("Error getting symlinks sub-choice", "error", err)
+			return
+		}
 
-        switch choice {
-        case "create_local":
-            createLocalSymlinks(logger, config)
-        case "create_global":
-            createGlobalSymlinks(logger, config)
-        case "delete_local":
-            deleteLocalSymlinks(logger, config)
-        case "delete_global":
-            deleteGlobalSymlinks(logger, config)
-        case "back":
-            return
-        default:
-            logger.Error("Invalid symlinks sub-choice")
-        }
-    }
+		switch choice {
+		case "create_local":
+			createLocalSymlinks(logger, config)
+		case "create_global":
+			createGlobalSymlinks(logger, config)
+		case "delete_local":
+			deleteLocalSymlinks(logger, config)
+		case "delete_global":
+			deleteGlobalSymlinks(logger, config)
+		case "back":
+			return
+		default:
+			logger.Error("Invalid symlinks sub-choice")
+		}
+	}
+}
+
+// ensureConfig checks if a valid config is loaded and prompts the user if it's not.
+// It returns true if a valid config is available or newly loaded, false otherwise.
+func ensureConfig(logger *log.Logger, config **Config) bool {
+	if *config == nil || (*config).Repositories == nil {
+		logger.Warn("No valid config loaded")
+		var choice string
+		err := huh.NewSelect[string]().
+			Title("A config file is required for this operation. What would you like to do?").
+			Options(
+				huh.NewOption("Specify a config file", "specify"),
+				huh.NewOption("Go back to main menu", "back"),
+				huh.NewOption("Exit", "exit"),
+			).
+			Value(&choice).
+			Run()
+
+		if err != nil {
+			logger.Error("Error getting user choice", "error", err)
+			return false
+		}
+
+		switch choice {
+		case "specify":
+			newConfig, err := getConfigFromUser(logger)
+			if err != nil {
+				logger.Error("Error loading config", "error", err)
+				return false
+			}
+			*config = newConfig
+			return newConfig != nil
+		case "back":
+			return false
+		case "exit":
+			fmt.Println("Exiting Gitspace. Goodbye!")
+			os.Exit(0)
+		}
+		return false
+	}
+	return true
 }
