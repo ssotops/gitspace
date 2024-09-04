@@ -10,8 +10,10 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/mitchellh/go-homedir"
 	"github.com/ssotspace/gitspace/lib"
+	"github.com/zclconf/go-cty/cty"
 )
 
 type RepoResult struct {
@@ -250,60 +252,6 @@ func syncRepositories(logger *log.Logger, config *Config) {
 	printSummaryTable(config, results, repoDir)
 }
 
-func filterRepositories(repos []string, config *Config) []string {
-	var filtered []string
-	cloneConfig := config.Repositories.Clone
-
-	for _, repo := range repos {
-		// Check exact names
-		if matchesFilter(repo, cloneConfig.IsExactly) {
-			filtered = append(filtered, repo)
-			continue
-		}
-
-		// Check startsWith
-		if matchesFilter(repo, cloneConfig.StartsWith) {
-			filtered = append(filtered, repo)
-			continue
-		}
-
-		// Check endsWith
-		if matchesFilter(repo, cloneConfig.EndsWith) {
-			filtered = append(filtered, repo)
-			continue
-		}
-
-		// Check includes
-		if matchesFilter(repo, cloneConfig.Includes) {
-			filtered = append(filtered, repo)
-			continue
-		}
-
-		// If no filters are specified, include all repositories
-		if cloneConfig.IsExactly == nil && cloneConfig.StartsWith == nil &&
-			cloneConfig.EndsWith == nil && cloneConfig.Includes == nil {
-			filtered = append(filtered, repo)
-		}
-	}
-
-	return filtered
-}
-
-func matchesFilter(repo string, filter *FilterConfig) bool {
-	if filter == nil || len(filter.Values) == 0 {
-		return false
-	}
-	for _, value := range filter.Values {
-		if strings.HasPrefix(strings.ToLower(repo), strings.ToLower(value)) ||
-			strings.HasSuffix(strings.ToLower(repo), strings.ToLower(value)) ||
-			strings.Contains(strings.ToLower(repo), strings.ToLower(value)) ||
-			repo == value {
-			return true
-		}
-	}
-	return false
-}
-
 func getRepoType(config *Config, repo string) string {
 	if matchesFilter(repo, config.Repositories.Clone.StartsWith) {
 		return config.Repositories.Clone.StartsWith.Repository.Type
@@ -339,80 +287,6 @@ func getRepoLabels(config *Config, repo string) []string {
 
 	return removeDuplicates(labels)
 }
-
-func syncLabels(logger *log.Logger, config *Config) {
-	// Fetch repositories
-	repos, err := lib.GetRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
-	if err != nil {
-		logger.Error("Error fetching repositories", "error", err)
-		return
-	}
-
-	// Calculate label changes
-	changes := calculateLabelChanges(repos, config)
-
-	// Print summary of changes
-	printLabelChangeSummary(changes)
-
-	// Prompt for confirmation
-	confirmed := confirmChanges()
-	if !confirmed {
-		logger.Info("Label sync cancelled by user")
-		return
-	}
-
-	// Apply changes
-	applyLabelChanges(changes, logger, config.Repositories.Clone.Owner)
-}
-
-func calculateLabelChanges(repos []string, config *Config) map[string][]string {
-	changes := make(map[string][]string)
-
-	for _, repo := range repos {
-		// Add global labels
-		changes[repo] = append(changes[repo], config.Repositories.Labels...)
-
-		// Check each filter and add corresponding labels
-		if config.Repositories.Clone != nil {
-			if matchesFilter(repo, config.Repositories.Clone.StartsWith) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.StartsWith)...)
-			}
-			if matchesFilter(repo, config.Repositories.Clone.EndsWith) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.EndsWith)...)
-			}
-			if matchesFilter(repo, config.Repositories.Clone.Includes) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.Includes)...)
-			}
-			if matchesFilter(repo, config.Repositories.Clone.IsExactly) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.IsExactly)...)
-			}
-		}
-
-		// Remove duplicates
-		changes[repo] = removeDuplicates(changes[repo])
-	}
-
-	return changes
-}
-
-func getLabelsFromFilter(filter *FilterConfig) []string {
-	if filter != nil && filter.Repository != nil {
-		return filter.Repository.Labels
-	}
-	return []string{}
-}
-
-func applyLabelChanges(changes map[string][]string, logger *log.Logger, owner string) {
-	for repo, labels := range changes {
-		err := lib.AddLabelsToRepository(owner, repo, labels)
-		if err != nil {
-			logger.Error("Error applying labels to repository", "repo", repo, "error", err)
-		} else {
-			logger.Info("Labels applied successfully", "repo", repo, "labels", labels)
-		}
-	}
-}
-// Add this function to repository.go (and remove it from version.go)
 
 func updateIndexHCL(logger *log.Logger, config *Config, repoResults map[string]*RepoResult) error {
 	cacheDir, err := getCacheDir()
@@ -530,4 +404,53 @@ func updateIndexHCL(logger *log.Logger, config *Config, repoResults map[string]*
 
 	logger.Info("Successfully updated index.hcl")
 	return nil
+}
+
+func filterRepositories(repos []string, config *Config) []string {
+	var filtered []string
+	cloneConfig := config.Repositories.Clone
+
+	for _, repo := range repos {
+		if matchesFilter(repo, cloneConfig.IsExactly) {
+			filtered = append(filtered, repo)
+			continue
+		}
+
+		if matchesFilter(repo, cloneConfig.StartsWith) {
+			filtered = append(filtered, repo)
+			continue
+		}
+
+		if matchesFilter(repo, cloneConfig.EndsWith) {
+			filtered = append(filtered, repo)
+			continue
+		}
+
+		if matchesFilter(repo, cloneConfig.Includes) {
+			filtered = append(filtered, repo)
+			continue
+		}
+
+		if cloneConfig.IsExactly == nil && cloneConfig.StartsWith == nil &&
+			cloneConfig.EndsWith == nil && cloneConfig.Includes == nil {
+			filtered = append(filtered, repo)
+		}
+	}
+
+	return filtered
+}
+
+func matchesFilter(repo string, filter *FilterConfig) bool {
+	if filter == nil || len(filter.Values) == 0 {
+		return false
+	}
+	for _, value := range filter.Values {
+		if strings.HasPrefix(strings.ToLower(repo), strings.ToLower(value)) ||
+			strings.HasSuffix(strings.ToLower(repo), strings.ToLower(value)) ||
+			strings.Contains(strings.ToLower(repo), strings.ToLower(value)) ||
+			repo == value {
+			return true
+		}
+	}
+	return false
 }

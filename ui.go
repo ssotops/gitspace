@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+  "os"
+  "path/filepath"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -111,77 +113,6 @@ func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
 	}
 }
 
-func handleGitspaceCommand(logger *log.Logger, config *Config) {
-	for {
-		var choice string
-		err := huh.NewSelect[string]().
-			Title("Choose a Gitspace action").
-			Options(
-				huh.NewOption("Upgrade Gitspace", "upgrade"),
-				huh.NewOption("Print Config Paths", "config_paths"),
-				huh.NewOption("Print Version Info", "version_info"),
-				huh.NewOption("Go back", "back"),
-			).
-			Value(&choice).
-			Run()
-
-		if err != nil {
-			logger.Error("Error getting Gitspace sub-choice", "error", err)
-			return
-		}
-
-		switch choice {
-		case "upgrade":
-			upgradeGitspace(logger)
-		case "config_paths":
-			handleConfigPathsCommand(logger)
-		case "version_info":
-			printVersionInfo(logger)
-		case "back":
-			return
-		default:
-			logger.Error("Invalid Gitspace sub-choice")
-		}
-	}
-}
-
-func handleSymlinksCommand(logger *log.Logger, config *Config) {
-	for {
-		var choice string
-		err := huh.NewSelect[string]().
-			Title("Choose a symlinks action").
-			Options(
-				huh.NewOption("Create local symlinks", "create_local"),
-				huh.NewOption("Create global symlinks", "create_global"),
-				huh.NewOption("Delete local symlinks", "delete_local"),
-				huh.NewOption("Delete global symlinks", "delete_global"),
-				huh.NewOption("Go back", "back"),
-			).
-			Value(&choice).
-			Run()
-
-		if err != nil {
-			logger.Error("Error getting symlinks sub-choice", "error", err)
-			return
-		}
-
-		switch choice {
-		case "create_local":
-			createLocalSymlinks(logger, config)
-		case "create_global":
-			createGlobalSymlinks(logger, config)
-		case "delete_local":
-			deleteLocalSymlinks(logger, config)
-		case "delete_global":
-			deleteGlobalSymlinks(logger, config)
-		case "back":
-			return
-		default:
-			logger.Error("Invalid symlinks sub-choice")
-		}
-	}
-}
-
 func printSymlinkSummary(title string, changes map[string]string) {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FFFF"))
 	symlinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF"))
@@ -265,32 +196,6 @@ func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir s
 	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Failed operations: %d", failedRepos)))
 	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Local symlinks created: %d", localSymlinks)))
 	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Global symlinks created: %d", globalSymlinks)))
-}
-
-func printLabelChangeSummary(changes map[string][]string) {
-	fmt.Println("Label Sync Summary:")
-	for repo, labels := range changes {
-		fmt.Printf("%s:\n", repo)
-		for _, label := range labels {
-			fmt.Printf("  + %s\n", label)
-		}
-		fmt.Println()
-	}
-}
-
-func confirmChanges() bool {
-	var confirmed bool
-	err := huh.NewConfirm().
-		Title("Do you want to apply these changes?").
-		Value(&confirmed).
-		Run()
-
-	if err != nil {
-		fmt.Println("Error getting confirmation:", err)
-		return false
-	}
-
-	return confirmed
 }
 
 func handleConfigPathsCommand(logger *log.Logger) {
@@ -397,4 +302,76 @@ func handleConfigCommand(logger *log.Logger) {
 	}
 
 	fmt.Println() // Add an extra newline for spacing
+}
+
+
+func handleGitspaceCommand(logger *log.Logger, config *Config) {
+    for {
+        var choice string
+        err := huh.NewSelect[string]().
+            Title("Choose a Gitspace action").
+            Options(
+                huh.NewOption("Upgrade Gitspace", "upgrade"),
+                huh.NewOption("Print Config Paths", "config_paths"),
+                huh.NewOption("Print Version Info", "version_info"),
+                huh.NewOption("Go back", "back"),
+            ).
+            Value(&choice).
+            Run()
+
+        if err != nil {
+            logger.Error("Error getting Gitspace sub-choice", "error", err)
+            return
+        }
+
+        switch choice {
+        case "upgrade":
+            upgradeGitspace(logger)
+        case "config_paths":
+            handleConfigPathsCommand(logger)
+        case "version_info":
+            printVersionInfo(logger)
+        case "back":
+            return
+        default:
+            logger.Error("Invalid Gitspace sub-choice")
+        }
+    }
+}
+
+func handleSymlinksCommand(logger *log.Logger, config *Config) {
+    for {
+        var choice string
+        err := huh.NewSelect[string]().
+            Title("Choose a symlinks action").
+            Options(
+                huh.NewOption("Create local symlinks", "create_local"),
+                huh.NewOption("Create global symlinks", "create_global"),
+                huh.NewOption("Delete local symlinks", "delete_local"),
+                huh.NewOption("Delete global symlinks", "delete_global"),
+                huh.NewOption("Go back", "back"),
+            ).
+            Value(&choice).
+            Run()
+
+        if err != nil {
+            logger.Error("Error getting symlinks sub-choice", "error", err)
+            return
+        }
+
+        switch choice {
+        case "create_local":
+            createLocalSymlinks(logger, config)
+        case "create_global":
+            createGlobalSymlinks(logger, config)
+        case "delete_local":
+            deleteLocalSymlinks(logger, config)
+        case "delete_global":
+            deleteGlobalSymlinks(logger, config)
+        case "back":
+            return
+        default:
+            logger.Error("Invalid symlinks sub-choice")
+        }
+    }
 }
