@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-  "time"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
@@ -44,28 +44,6 @@ type FilterConfig struct {
 	} `hcl:"repository,block"`
 }
 
-func getConfigFromUser(logger *log.Logger) (Config, error) {
-	var configPath string
-	err := huh.NewInput().
-		Title("Enter the path to your config file").
-		Placeholder("./gs.hcl").
-		Value(&configPath).
-		Run()
-
-	if err != nil {
-		return Config{}, fmt.Errorf("error getting config path: %w", err)
-	}
-
-	// If no input was provided, use the default value
-	if configPath == "" {
-		configPath = "./gs.hcl"
-	}
-
-	return decodeHCLFile(configPath)
-}
-
-// Add these struct definitions to config.go
-
 type IndexHCL struct {
 	LastUpdated  string                     `hcl:"lastUpdated"`
 	Repositories map[string]SCMRepositories `hcl:"repositories"`
@@ -84,6 +62,61 @@ type RepoInfo struct {
 	BackupPath string    `hcl:"backupPath"`
 	LastCloned time.Time `hcl:"lastCloned"`
 	LastSynced time.Time `hcl:"lastSynced"`
+}
+
+func getConfigFromUser(logger *log.Logger) (*Config, error) {
+	defaultPath := "./gs.hcl"
+
+	for {
+		var configPath string
+		err := huh.NewInput().
+			Title("Enter the path to your config file (optional; just hit Enter for default)").
+			Placeholder(defaultPath).
+			Value(&configPath).
+			Run()
+
+		if err != nil {
+			return nil, fmt.Errorf("error getting config path: %w", err)
+		}
+
+		// If the input is empty, use the default path
+		if configPath == "" {
+			configPath = defaultPath
+			logger.Info("Using default config file path", "path", configPath)
+		}
+
+		config, err := decodeHCLFile(configPath)
+		if err != nil {
+			logger.Error("Error reading config file", "error", err, "path", configPath)
+
+			var choice string
+			err := huh.NewSelect[string]().
+				Title("What would you like to do?").
+				Options(
+					huh.NewOption("Proceed to Gitspace main menu", "proceed"),
+					huh.NewOption("Re-enter the file path", "retry"),
+					huh.NewOption("Exit", "exit"),
+				).
+				Value(&choice).
+				Run()
+
+			if err != nil {
+				return nil, fmt.Errorf("error getting user choice: %w", err)
+			}
+
+			switch choice {
+			case "proceed":
+				return nil, nil
+			case "retry":
+				continue
+			case "exit":
+				os.Exit(0)
+			}
+		} else {
+			logger.Info("Config file loaded successfully", "path", configPath)
+			return &config, nil
+		}
+	}
 }
 
 func decodeHCLFile(filename string) (Config, error) {

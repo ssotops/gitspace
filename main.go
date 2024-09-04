@@ -18,7 +18,10 @@ func main() {
 
 	printWelcomeMessage()
 
-	config, err := getConfigFromUser(logger)
+	var config *Config
+	var err error
+
+	config, err = getConfigFromUser(logger)
 	if err != nil {
 		logger.Error("Error getting config", "error", err)
 		return
@@ -31,10 +34,19 @@ func main() {
 			fmt.Println("\nReceived interrupt signal. Exiting Gitspace...")
 			return
 		default:
+			printConfigPath(config)
 			if handleMainMenu(logger, &config) {
 				return // Exit the program if user chose to quit
 			}
 		}
+	}
+}
+
+func printConfigPath(config *Config) {
+	if config != nil && config.Repositories != nil && config.Repositories.GitSpace != nil && config.Repositories.GitSpace.Path != "" {
+		fmt.Printf("Current config path: %s\n\n", config.Repositories.GitSpace.Path)
+	} else {
+		fmt.Println("No config file loaded.\n")
 	}
 }
 
