@@ -36,6 +36,7 @@ func showMainMenu() string {
 			huh.NewOption("Repositories", "repositories"),
 			huh.NewOption("Symlinks", "symlinks"),
 			huh.NewOption("Sync Labels", "sync"),
+			huh.NewOption("Plugins", "plugins"), // New option
 			huh.NewOption("Gitspace", "gitspace"),
 			huh.NewOption("Quit", "quit"),
 		).
@@ -62,9 +63,11 @@ func handleMainMenu(logger *log.Logger, config **Config) bool {
 	case "sync":
 		syncLabels(logger, *config)
 	case "gitspace":
-		handleGitspaceCommand(logger, config)
+		handleGitspaceCommand(logger, *config)
 	case "symlinks":
 		handleSymlinksCommand(logger, *config)
+	case "plugins": // New case
+		handlePluginsCommand(logger, *config)
 	case "quit":
 		fmt.Println("Exiting Gitspace. Goodbye!")
 		return true
@@ -307,7 +310,7 @@ func handleConfigCommand(logger *log.Logger) {
 	fmt.Println() // Add an extra newline for spacing
 }
 
-func handleGitspaceCommand(logger *log.Logger, config **Config) {
+func handleGitspaceCommand(logger *log.Logger, config *Config) {
 	for {
 		var choice string
 		err := huh.NewSelect[string]().
@@ -339,7 +342,7 @@ func handleGitspaceCommand(logger *log.Logger, config **Config) {
 			if err != nil {
 				logger.Error("Error loading config", "error", err)
 			} else {
-				*config = newConfig // This line is changed
+				config = newConfig
 				if newConfig != nil && newConfig.Repositories != nil && newConfig.Repositories.GitSpace != nil {
 					logger.Info("Config loaded successfully", "path", newConfig.Repositories.GitSpace.Path)
 				} else {
@@ -433,4 +436,41 @@ func ensureConfig(logger *log.Logger, config **Config) bool {
 		return false
 	}
 	return true
+}
+
+func handlePluginsCommand(logger *log.Logger, config *Config) {
+	for {
+		var subChoice string
+		err := huh.NewSelect[string]().
+			Title("Choose a plugins action").
+			Options(
+				huh.NewOption("Install Plugin", "install"),
+				huh.NewOption("Uninstall Plugin", "uninstall"),
+				huh.NewOption("Print Installed Plugins", "print"),
+				huh.NewOption("Go back", "back"),
+			).
+			Value(&subChoice).
+			Run()
+
+		if err != nil {
+			logger.Error("Error getting plugins sub-choice", "error", err)
+			return
+		}
+
+		switch subChoice {
+		case "install":
+			// TODO: Implement installPlugin function
+			fmt.Println("Install Plugin functionality not yet implemented.")
+		case "uninstall":
+			// TODO: Implement uninstallPlugin function
+			fmt.Println("Uninstall Plugin functionality not yet implemented.")
+		case "print":
+			// TODO: Implement printInstalledPlugins function
+			fmt.Println("Print Installed Plugins functionality not yet implemented.")
+		case "back":
+			return // Go back to main menu
+		default:
+			logger.Error("Invalid plugins sub-choice")
+		}
+	}
 }
