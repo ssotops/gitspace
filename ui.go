@@ -447,6 +447,7 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 				huh.NewOption("Install Plugin", "install"),
 				huh.NewOption("Uninstall Plugin", "uninstall"),
 				huh.NewOption("Print Installed Plugins", "print"),
+				huh.NewOption("Run Plugin", "run"),
 				huh.NewOption("Go back", "back"),
 			).
 			Value(&subChoice).
@@ -459,14 +460,71 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 
 		switch subChoice {
 		case "install":
-			// TODO: Implement installPlugin function
-			fmt.Println("Install Plugin functionality not yet implemented.")
+			var source string
+			err := huh.NewInput().
+				Title("Enter the plugin source (URL or file path)").
+				Value(&source).
+				Run()
+
+			if err != nil {
+				logger.Error("Error getting plugin source", "error", err)
+				continue
+			}
+
+			err = installPlugin(logger, source)
+			if err != nil {
+				logger.Error("Failed to install plugin", "error", err)
+			}
 		case "uninstall":
-			// TODO: Implement uninstallPlugin function
-			fmt.Println("Uninstall Plugin functionality not yet implemented.")
+			var name string
+			err := huh.NewInput().
+				Title("Enter the plugin name to uninstall").
+				Value(&name).
+				Run()
+
+			if err != nil {
+				logger.Error("Error getting plugin name", "error", err)
+				continue
+			}
+
+			err = uninstallPlugin(logger, name)
+			if err != nil {
+				logger.Error("Failed to uninstall plugin", "error", err)
+			}
 		case "print":
-			// TODO: Implement printInstalledPlugins function
-			fmt.Println("Print Installed Plugins functionality not yet implemented.")
+			err := printInstalledPlugins(logger)
+			if err != nil {
+				logger.Error("Failed to print installed plugins", "error", err)
+			}
+		case "run":
+			var name string
+			err := huh.NewInput().
+				Title("Enter the plugin name to run").
+				Value(&name).
+				Run()
+
+			if err != nil {
+				logger.Error("Error getting plugin name", "error", err)
+				continue
+			}
+
+			pluginsDir, err := getPluginsDir()
+			if err != nil {
+				logger.Error("Failed to get plugins directory", "error", err)
+				continue
+			}
+
+			pluginPath := filepath.Join(pluginsDir, name)
+			plugin, err := loadPlugin(pluginPath)
+			if err != nil {
+				logger.Error("Failed to load plugin", "error", err)
+				continue
+			}
+
+			err = plugin.Run()
+			if err != nil {
+				logger.Error("Failed to run plugin", "error", err)
+			}
 		case "back":
 			return // Go back to main menu
 		default:
