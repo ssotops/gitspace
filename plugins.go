@@ -2,12 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"plugin"
-	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/hashicorp/hcl/v2/hclsimple"
@@ -39,9 +35,16 @@ type GitspacePlugin interface {
 func getPluginsDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	return filepath.Join(homeDir, ".ssot", "gitspace", "plugins"), nil
+	pluginsDir := filepath.Join(homeDir, ".ssot", "gitspace", "plugins")
+
+	// Ensure the plugins directory exists
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create plugins directory: %w", err)
+	}
+
+	return pluginsDir, nil
 }
 
 func installPlugin(logger *log.Logger, source string) error {
@@ -49,23 +52,28 @@ func installPlugin(logger *log.Logger, source string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get plugins directory: %w", err)
 	}
+	logger.Debug("Plugins directory", "path", pluginsDir)
 
-	// Ensure plugins directory exists
-	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create plugins directory: %w", err)
+	// Get absolute path of the source
+	absSource, err := filepath.Abs(source)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path of source: %w", err)
 	}
+	logger.Debug("Absolute source path", "path", absSource)
 
-	sourceInfo, err := os.Stat(source)
+	sourceInfo, err := os.Stat(absSource)
 	if err != nil {
 		return fmt.Errorf("failed to get source info: %w", err)
 	}
 
 	if sourceInfo.IsDir() {
 		// Handle directory installation
-		return installPluginFromDirectory(logger, source, pluginsDir)
-	} else if filepath.Ext(source) == ".hcl" {
+		logger.Debug("Installing from directory", "path", absSource)
+		return installPluginFromDirectory(logger, absSource, pluginsDir)
+	} else if filepath.Ext(absSource) == ".hcl" {
 		// Handle .hcl file installation
-		return installPluginFromManifest(logger, source, pluginsDir)
+		logger.Debug("Installing from .hcl file", "path", absSource)
+		return installPluginFromManifest(logger, absSource, pluginsDir)
 	} else {
 		return fmt.Errorf("invalid source: must be a directory or .hcl file")
 	}
@@ -96,25 +104,50 @@ func installPluginFromDirectory(logger *log.Logger, sourceDir, pluginsDir string
 }
 
 func installPluginFromManifest(logger *log.Logger, manifestPath, pluginsDir string) error {
+	logger.Debug("Starting plugin installation", "manifestPath", manifestPath, "pluginsDir", pluginsDir)
+
 	manifest, err := loadPluginManifest(manifestPath)
 	if err != nil {
 		return fmt.Errorf("failed to load manifest: %w", err)
 	}
+	logger.Debug("Loaded plugin manifest", "name", manifest.Plugin.Name)
 
-	// Create a directory for the plugin
+	// Create a directory for the plugin in the plugins directory
 	pluginDir := filepath.Join(pluginsDir, manifest.Plugin.Name)
+	logger.Debug("Preparing plugin directory", "path", pluginDir)
+
+	// Check if pluginDir already exists
+	if fileInfo, err := os.Stat(pluginDir); err == nil {
+		if fileInfo.IsDir() {
+			logger.Warn("Plugin directory already exists, removing it", "path", pluginDir)
+			if err := os.RemoveAll(pluginDir); err != nil {
+				return fmt.Errorf("failed to remove existing plugin directory: %w", err)
+			}
+		} else {
+			logger.Warn("A file exists with the same name as the plugin directory, removing it", "path", pluginDir)
+			if err := os.Remove(pluginDir); err != nil {
+				return fmt.Errorf("failed to remove existing file: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("error checking plugin directory: %w", err)
+	}
+
+	logger.Debug("Creating plugin directory", "path", pluginDir)
 	if err := os.MkdirAll(pluginDir, 0755); err != nil {
 		return fmt.Errorf("failed to create plugin directory: %w", err)
 	}
 
 	// Copy the manifest file
 	destManifestPath := filepath.Join(pluginDir, filepath.Base(manifestPath))
+	logger.Debug("Copying manifest file", "from", manifestPath, "to", destManifestPath)
 	if err := copyFile(manifestPath, destManifestPath); err != nil {
 		return fmt.Errorf("failed to copy manifest file: %w", err)
 	}
 
 	// Copy the plugin source files
 	sourceDir := filepath.Dir(manifestPath)
+	logger.Debug("Copying plugin source files", "from", sourceDir, "to", pluginDir)
 	err = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -122,6 +155,7 @@ func installPluginFromManifest(logger *log.Logger, manifestPath, pluginsDir stri
 		if !info.IsDir() && filepath.Ext(path) != ".hcl" {
 			relPath, _ := filepath.Rel(sourceDir, path)
 			destPath := filepath.Join(pluginDir, relPath)
+			logger.Debug("Copying file", "from", path, "to", destPath)
 			if err := copyFile(path, destPath); err != nil {
 				return fmt.Errorf("failed to copy file %s: %w", relPath, err)
 			}
@@ -136,142 +170,72 @@ func installPluginFromManifest(logger *log.Logger, manifestPath, pluginsDir stri
 	return nil
 }
 
-func printInstalledPlugins(logger *log.Logger) error {
-	pluginsDir, err := getPluginsDir()
-	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
-	}
-
-	plugins, err := os.ReadDir(pluginsDir)
-	if err != nil {
-		return fmt.Errorf("failed to read plugins directory: %w", err)
-	}
-
-	fmt.Println("Installed plugins:")
-	for _, p := range plugins {
-		if p.IsDir() {
-			manifestPath := filepath.Join(pluginsDir, p.Name(), p.Name()+".hcl")
-			manifest, err := loadPluginManifest(manifestPath)
-			if err != nil {
-				logger.Warn("Failed to load plugin manifest", "plugin", p.Name(), "error", err)
-				continue
-			}
-			fmt.Printf("- %s (v%s): %s\n", manifest.Plugin.Name, manifest.Plugin.Version, manifest.Plugin.Description)
-		}
-	}
-
-	return nil
-}
-
 func loadPluginManifest(path string) (*PluginManifest, error) {
 	var manifest PluginManifest
 	err := hclsimple.DecodeFile(path, nil, &manifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode manifest: %w", err)
 	}
-
-	// Validate required fields
-	var missingFields []string
-	if manifest.Plugin.Name == "" {
-		missingFields = append(missingFields, "name")
-	}
-	if manifest.Plugin.Version == "" {
-		missingFields = append(missingFields, "version")
-	}
-	if manifest.Plugin.EntryPoint == "" {
-		missingFields = append(missingFields, "entry_point")
-	}
-
-	if len(missingFields) > 0 {
-		return nil, fmt.Errorf("manifest is missing required fields: %s", strings.Join(missingFields, ", "))
-	}
-
 	return &manifest, nil
 }
 
-func isURL(str string) bool {
-	return strings.HasPrefix(str, "http://") || strings.HasPrefix(str, "https://")
-}
-
-func downloadFile(url, filepath string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	out, err := os.Create(filepath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, resp.Body)
-	return err
-}
-
 func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
+	// Ensure the destination directory exists
+	dstDir := filepath.Dir(dst)
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
-	defer sourceFile.Close()
 
-	destFile, err := os.Create(dst)
+	input, err := os.ReadFile(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read source file: %w", err)
 	}
-	defer destFile.Close()
 
-	_, err = io.Copy(destFile, sourceFile)
-	return err
+	err = os.WriteFile(dst, input, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write destination file: %w", err)
+	}
+
+	return nil
+}
+
+func uninstallPlugin(logger *log.Logger, name string) error {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	pluginDir := filepath.Join(pluginsDir, name)
+	if err := os.RemoveAll(pluginDir); err != nil {
+		return fmt.Errorf("failed to remove plugin directory: %w", err)
+	}
+
+	logger.Info("Plugin uninstalled successfully", "name", name)
+	return nil
+}
+
+func printInstalledPlugins(logger *log.Logger) error {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return fmt.Errorf("failed to read plugins directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			fmt.Println(entry.Name())
+		}
+	}
+
+	return nil
 }
 
 func loadPlugin(path string) (GitspacePlugin, error) {
-	manifestPath := filepath.Join(path, filepath.Base(path)+".hcl")
-	manifest, err := loadPluginManifest(manifestPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load plugin manifest: %w", err)
-	}
-
-	p, err := plugin.Open(filepath.Join(path, manifest.Plugin.EntryPoint))
-	if err != nil {
-		return nil, fmt.Errorf("failed to open plugin: %w", err)
-	}
-
-	symPlugin, err := p.Lookup("Plugin")
-	if err != nil {
-		return nil, fmt.Errorf("failed to lookup 'Plugin' symbol: %w", err)
-	}
-
-	var gp GitspacePlugin
-	gp, ok := symPlugin.(GitspacePlugin)
-	if !ok {
-		return nil, fmt.Errorf("unexpected type from module symbol")
-	}
-
-	return gp, nil
-}
-
-func uninstallPlugin(logger *log.Logger, pluginName string) error {
-    pluginsDir, err := getPluginsDir()
-    if err != nil {
-        return fmt.Errorf("failed to get plugins directory: %w", err)
-    }
-
-    pluginDir := filepath.Join(pluginsDir, pluginName)
-    
-    // Check if the plugin directory exists
-    if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
-        return fmt.Errorf("plugin '%s' is not installed", pluginName)
-    }
-
-    // Remove the plugin directory
-    err = os.RemoveAll(pluginDir)
-    if err != nil {
-        return fmt.Errorf("failed to remove plugin directory: %w", err)
-    }
-
-    logger.Info("Plugin uninstalled successfully", "name", pluginName)
-    return nil
+	// This is a placeholder implementation. You'll need to implement
+	// the actual plugin loading logic based on your plugin system.
+	return nil, fmt.Errorf("plugin loading not implemented")
 }

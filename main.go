@@ -11,6 +11,7 @@ import (
 
 func main() {
 	logger := initLogger()
+	logger.Info("Gitspace starting up")
 
 	// Set up signal handling for graceful shutdown
 	signalChan := make(chan os.Signal, 1)
@@ -26,16 +27,18 @@ func main() {
 		logger.Error("Error getting config", "error", err)
 		return
 	}
+	logger.Debug("Config loaded successfully", "config_path", config.Repositories.GitSpace.Path)
 
 	// Main menu loop
 	for {
 		select {
 		case <-signalChan:
-			fmt.Println("\nReceived interrupt signal. Exiting Gitspace...")
+			logger.Info("Received interrupt signal. Exiting Gitspace...")
 			return
 		default:
 			printConfigPath(config)
 			if handleMainMenu(logger, &config) {
+				logger.Info("User chose to quit. Exiting Gitspace...")
 				return // Exit the program if user chose to quit
 			}
 		}
@@ -51,9 +54,11 @@ func printConfigPath(config *Config) {
 }
 
 func initLogger() *log.Logger {
-	return log.NewWithOptions(os.Stderr, log.Options{
+	logger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
 		Level:           log.DebugLevel,
 	})
+	logger.Debug("Logger initialized with Debug level")
+	return logger
 }

@@ -1,3 +1,5 @@
+//go:build plugin
+// +build plugin
 package main
 
 import (
