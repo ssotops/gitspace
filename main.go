@@ -49,7 +49,7 @@ func printConfigPath(config *Config) {
 	if config != nil && config.Repositories != nil && config.Repositories.GitSpace != nil && config.Repositories.GitSpace.Path != "" {
 		fmt.Printf("Current config path: %s\n\n", config.Repositories.GitSpace.Path)
 	} else {
-		fmt.Println("No config file loaded.\n")
+		fmt.Println("No config file loaded.")
 	}
 }
 
