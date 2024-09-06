@@ -439,96 +439,81 @@ func ensureConfig(logger *log.Logger, config **Config) bool {
 }
 
 func handlePluginsCommand(logger *log.Logger, config *Config) {
-	for {
-		var subChoice string
-		err := huh.NewSelect[string]().
-			Title("Choose a plugins action").
-			Options(
-				huh.NewOption("Install Plugin", "install"),
-				huh.NewOption("Uninstall Plugin", "uninstall"),
-				huh.NewOption("Print Installed Plugins", "print"),
-				huh.NewOption("Run Plugin", "run"),
-				huh.NewOption("Go back", "back"),
-			).
-			Value(&subChoice).
-			Run()
+    for {
+        var subChoice string
+        err := huh.NewSelect[string]().
+            Title("Choose a plugins action").
+            Options(
+                huh.NewOption("Install Plugin", "install"),
+                huh.NewOption("Uninstall Plugin", "uninstall"),
+                huh.NewOption("Print Installed Plugins", "print"),
+                huh.NewOption("Run Plugin", "run"),
+                huh.NewOption("Go back", "back"),
+            ).
+            Value(&subChoice).
+            Run()
 
-		if err != nil {
-			logger.Error("Error getting plugins sub-choice", "error", err)
-			return
-		}
+        if err != nil {
+            logger.Error("Error getting plugins sub-choice", "error", err)
+            return
+        }
 
-		switch subChoice {
-		case "install":
-			var source string
-			err := huh.NewInput().
-				Title("Enter the plugin source (URL or file path)").
-				Value(&source).
-				Run()
+        switch subChoice {
+        case "install":
+            source, err := getPathWithCompletion("Enter the plugin source (directory or .hcl file)")
+            if err != nil {
+                logger.Error("Error getting plugin source", "error", err)
+                continue
+            }
 
-			if err != nil {
-				logger.Error("Error getting plugin source", "error", err)
-				continue
-			}
+            err = installPlugin(logger, source)
+            if err != nil {
+                logger.Error("Failed to install plugin", "error", err)
+            }
+        case "uninstall":
+            name, err := getPathWithCompletion("Enter the plugin name to uninstall")
+            if err != nil {
+                logger.Error("Error getting plugin name", "error", err)
+                continue
+            }
 
-			err = installPlugin(logger, source)
-			if err != nil {
-				logger.Error("Failed to install plugin", "error", err)
-			}
-		case "uninstall":
-			var name string
-			err := huh.NewInput().
-				Title("Enter the plugin name to uninstall").
-				Value(&name).
-				Run()
+            err = uninstallPlugin(logger, name)
+            if err != nil {
+                logger.Error("Failed to uninstall plugin", "error", err)
+            }
+        case "print":
+            err := printInstalledPlugins(logger)
+            if err != nil {
+                logger.Error("Failed to print installed plugins", "error", err)
+            }
+        case "run":
+            name, err := getPathWithCompletion("Enter the plugin name to run")
+            if err != nil {
+                logger.Error("Error getting plugin name", "error", err)
+                continue
+            }
 
-			if err != nil {
-				logger.Error("Error getting plugin name", "error", err)
-				continue
-			}
+            pluginsDir, err := getPluginsDir()
+            if err != nil {
+                logger.Error("Failed to get plugins directory", "error", err)
+                continue
+            }
 
-			err = uninstallPlugin(logger, name)
-			if err != nil {
-				logger.Error("Failed to uninstall plugin", "error", err)
-			}
-		case "print":
-			err := printInstalledPlugins(logger)
-			if err != nil {
-				logger.Error("Failed to print installed plugins", "error", err)
-			}
-		case "run":
-			var name string
-			err := huh.NewInput().
-				Title("Enter the plugin name to run").
-				Value(&name).
-				Run()
+            pluginPath := filepath.Join(pluginsDir, name)
+            plugin, err := loadPlugin(pluginPath)
+            if err != nil {
+                logger.Error("Failed to load plugin", "error", err)
+                continue
+            }
 
-			if err != nil {
-				logger.Error("Error getting plugin name", "error", err)
-				continue
-			}
-
-			pluginsDir, err := getPluginsDir()
-			if err != nil {
-				logger.Error("Failed to get plugins directory", "error", err)
-				continue
-			}
-
-			pluginPath := filepath.Join(pluginsDir, name)
-			plugin, err := loadPlugin(pluginPath)
-			if err != nil {
-				logger.Error("Failed to load plugin", "error", err)
-				continue
-			}
-
-			err = plugin.Run()
-			if err != nil {
-				logger.Error("Failed to run plugin", "error", err)
-			}
-		case "back":
-			return // Go back to main menu
-		default:
-			logger.Error("Invalid plugins sub-choice")
-		}
-	}
+            err = plugin.Run()
+            if err != nil {
+                logger.Error("Failed to run plugin", "error", err)
+            }
+        case "back":
+            return // Go back to main menu
+        default:
+            logger.Error("Invalid plugins sub-choice")
+        }
+    }
 }
