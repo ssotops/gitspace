@@ -3,8 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"plugin"
+  "strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
 	"github.com/hashicorp/hcl/v2/hclsimple"
 )
@@ -238,4 +242,143 @@ func loadPlugin(path string) (GitspacePlugin, error) {
 	// This is a placeholder implementation. You'll need to implement
 	// the actual plugin loading logic based on your plugin system.
 	return nil, fmt.Errorf("plugin loading not implemented")
+}
+
+func runPlugin(logger *log.Logger) error {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	plugins, err := listInstalledPlugins(pluginsDir)
+	if err != nil {
+		return fmt.Errorf("failed to list installed plugins: %w", err)
+	}
+
+	if len(plugins) == 0 {
+		logger.Info("No plugins installed")
+		return nil
+	}
+
+	var selectedPlugin string
+	err = huh.NewSelect[string]().
+		Title("Select a plugin to run").
+		Options(plugins...).
+		Value(&selectedPlugin).
+		Run()
+
+	if err != nil {
+		return fmt.Errorf("failed to select plugin: %w", err)
+	}
+
+	pluginDir := filepath.Join(pluginsDir, selectedPlugin)
+	return compileAndRunPlugin(logger, pluginDir, selectedPlugin)
+}
+
+func listInstalledPlugins(pluginsDir string) ([]huh.Option[string], error) {
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read plugins directory: %w", err)
+	}
+
+	var options []huh.Option[string]
+	for _, entry := range entries {
+		if entry.IsDir() {
+			options = append(options, huh.NewOption(entry.Name(), entry.Name()))
+		}
+	}
+	return options, nil
+}
+
+func compileAndRunPlugin(logger *log.Logger, pluginDir, pluginName string) error {
+	// Find the main Go file
+	mainFile := ""
+	err := filepath.Walk(pluginDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".go") {
+			mainFile = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to find plugin source file: %w", err)
+	}
+	if mainFile == "" {
+		return fmt.Errorf("no Go source file found in plugin directory")
+	}
+
+	// Compile the plugin
+	pluginFile := filepath.Join(pluginDir, pluginName+".so")
+	cmd := exec.Command("go", "build", "-buildmode=plugin", "-o", pluginFile, mainFile)
+	cmd.Dir = pluginDir
+	cmd.Env = append(os.Environ(),
+		"CGO_ENABLED=1",
+		"GOARCH=arm64",
+		"GOOS=darwin",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to compile plugin: %w\nOutput: %s", err, output)
+	}
+
+	// Load and run the plugin
+	p, err := plugin.Open(pluginFile)
+	if err != nil {
+		return fmt.Errorf("failed to open plugin: %w", err)
+	}
+
+	symPlugin, err := p.Lookup("Plugin")
+	if err != nil {
+		return fmt.Errorf("plugin does not have a Plugin symbol: %w", err)
+	}
+
+	plugin, ok := symPlugin.(GitspacePlugin)
+	if !ok {
+		return fmt.Errorf("plugin does not implement GitspacePlugin interface")
+	}
+
+	logger.Info("Running plugin", "name", pluginName)
+	return plugin.Run()
+}
+
+func ensureGoMod(pluginDir, pluginName string) error {
+	goModPath := filepath.Join(pluginDir, "go.mod")
+	if _, err := os.Stat(goModPath); os.IsNotExist(err) {
+		cmd := exec.Command("go", "mod", "init", fmt.Sprintf("gitspace.com/plugin/%s", pluginName))
+		cmd.Dir = pluginDir
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to initialize go.mod: %w\nOutput: %s", err, output)
+		}
+	}
+
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = pluginDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to tidy go.mod: %w\nOutput: %s", err, output)
+	}
+
+	return nil
+}
+
+func executePlugin(logger *log.Logger, pluginPath string) error {
+	p, err := plugin.Open(pluginPath)
+	if err != nil {
+		return fmt.Errorf("failed to open plugin: %w", err)
+	}
+
+	runSymbol, err := p.Lookup("Run")
+	if err != nil {
+		return fmt.Errorf("plugin does not have a Run function: %w", err)
+	}
+
+	runFunc, ok := runSymbol.(func() error)
+	if !ok {
+		return fmt.Errorf("plugin Run function has wrong signature")
+	}
+
+	logger.Info("Running plugin", "path", pluginPath)
+	return runFunc()
 }

@@ -465,21 +465,23 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 				logger.Error("Error getting plugin source", "error", err)
 				continue
 			}
-
 			err = installPlugin(logger, source)
 			if err != nil {
 				logger.Error("Failed to install plugin", "error", err)
+			} else {
+				logger.Info("Plugin installed successfully")
 			}
 		case "uninstall":
-			name, err := getPathWithCompletion("Enter the plugin name to uninstall")
+			pluginName, err := selectInstalledPlugin(logger, "Select a plugin to uninstall")
 			if err != nil {
-				logger.Error("Error getting plugin name", "error", err)
+				logger.Error("Error selecting plugin to uninstall", "error", err)
 				continue
 			}
-
-			err = uninstallPlugin(logger, name)
+			err = uninstallPlugin(logger, pluginName)
 			if err != nil {
 				logger.Error("Failed to uninstall plugin", "error", err)
+			} else {
+				logger.Info("Plugin uninstalled successfully", "plugin", pluginName)
 			}
 		case "print":
 			err := printInstalledPlugins(logger)
@@ -487,33 +489,43 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 				logger.Error("Failed to print installed plugins", "error", err)
 			}
 		case "run":
-			name, err := getPathWithCompletion("Enter the plugin name to run")
-			if err != nil {
-				logger.Error("Error getting plugin name", "error", err)
-				continue
-			}
-
-			pluginsDir, err := getPluginsDir()
-			if err != nil {
-				logger.Error("Failed to get plugins directory", "error", err)
-				continue
-			}
-
-			pluginPath := filepath.Join(pluginsDir, name)
-			plugin, err := loadPlugin(pluginPath)
-			if err != nil {
-				logger.Error("Failed to load plugin", "error", err)
-				continue
-			}
-
-			err = plugin.Run()
+			err := runPlugin(logger)
 			if err != nil {
 				logger.Error("Failed to run plugin", "error", err)
 			}
 		case "back":
-			return // Go back to main menu
+			return
 		default:
 			logger.Error("Invalid plugins sub-choice")
 		}
 	}
+}
+
+func selectInstalledPlugin(logger *log.Logger, prompt string) (string, error) {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	plugins, err := listInstalledPlugins(pluginsDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to list installed plugins: %w", err)
+	}
+
+	if len(plugins) == 0 {
+		return "", fmt.Errorf("no plugins installed")
+	}
+
+	var selectedPlugin string
+	err = huh.NewSelect[string]().
+		Title(prompt).
+		Options(plugins...).
+		Value(&selectedPlugin).
+		Run()
+
+	if err != nil {
+		return "", fmt.Errorf("failed to select plugin: %w", err)
+	}
+
+	return selectedPlugin, nil
 }
