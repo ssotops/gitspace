@@ -36,6 +36,7 @@ func showMainMenu() string {
 			huh.NewOption("Repositories", "repositories"),
 			huh.NewOption("Symlinks", "symlinks"),
 			huh.NewOption("Sync Labels", "sync"),
+			huh.NewOption("Plugins", "plugins"), // New option
 			huh.NewOption("Gitspace", "gitspace"),
 			huh.NewOption("Quit", "quit"),
 		).
@@ -62,9 +63,11 @@ func handleMainMenu(logger *log.Logger, config **Config) bool {
 	case "sync":
 		syncLabels(logger, *config)
 	case "gitspace":
-		handleGitspaceCommand(logger, config)
+		handleGitspaceCommand(logger, *config)
 	case "symlinks":
 		handleSymlinksCommand(logger, *config)
+	case "plugins": // New case
+		handlePluginsCommand(logger, *config)
 	case "quit":
 		fmt.Println("Exiting Gitspace. Goodbye!")
 		return true
@@ -307,7 +310,7 @@ func handleConfigCommand(logger *log.Logger) {
 	fmt.Println() // Add an extra newline for spacing
 }
 
-func handleGitspaceCommand(logger *log.Logger, config **Config) {
+func handleGitspaceCommand(logger *log.Logger, config *Config) {
 	for {
 		var choice string
 		err := huh.NewSelect[string]().
@@ -339,7 +342,7 @@ func handleGitspaceCommand(logger *log.Logger, config **Config) {
 			if err != nil {
 				logger.Error("Error loading config", "error", err)
 			} else {
-				*config = newConfig // This line is changed
+				config = newConfig
 				if newConfig != nil && newConfig.Repositories != nil && newConfig.Repositories.GitSpace != nil {
 					logger.Info("Config loaded successfully", "path", newConfig.Repositories.GitSpace.Path)
 				} else {
@@ -433,4 +436,84 @@ func ensureConfig(logger *log.Logger, config **Config) bool {
 		return false
 	}
 	return true
+}
+
+func handlePluginsCommand(logger *log.Logger, config *Config) {
+	for {
+		var subChoice string
+		err := huh.NewSelect[string]().
+			Title("Choose a plugins action").
+			Options(
+				huh.NewOption("Install Plugin", "install"),
+				huh.NewOption("Uninstall Plugin", "uninstall"),
+				huh.NewOption("Print Installed Plugins", "print"),
+				huh.NewOption("Run Plugin", "run"),
+				huh.NewOption("Go back", "back"),
+			).
+			Value(&subChoice).
+			Run()
+
+		if err != nil {
+			logger.Error("Error getting plugins sub-choice", "error", err)
+			return
+		}
+
+		switch subChoice {
+		case "install":
+			source, err := getPathWithCompletion("Enter the plugin source (directory or .hcl file)")
+			if err != nil {
+				logger.Error("Error getting plugin source", "error", err)
+				continue
+			}
+
+			err = installPlugin(logger, source)
+			if err != nil {
+				logger.Error("Failed to install plugin", "error", err)
+			}
+		case "uninstall":
+			name, err := getPathWithCompletion("Enter the plugin name to uninstall")
+			if err != nil {
+				logger.Error("Error getting plugin name", "error", err)
+				continue
+			}
+
+			err = uninstallPlugin(logger, name)
+			if err != nil {
+				logger.Error("Failed to uninstall plugin", "error", err)
+			}
+		case "print":
+			err := printInstalledPlugins(logger)
+			if err != nil {
+				logger.Error("Failed to print installed plugins", "error", err)
+			}
+		case "run":
+			name, err := getPathWithCompletion("Enter the plugin name to run")
+			if err != nil {
+				logger.Error("Error getting plugin name", "error", err)
+				continue
+			}
+
+			pluginsDir, err := getPluginsDir()
+			if err != nil {
+				logger.Error("Failed to get plugins directory", "error", err)
+				continue
+			}
+
+			pluginPath := filepath.Join(pluginsDir, name)
+			plugin, err := loadPlugin(pluginPath)
+			if err != nil {
+				logger.Error("Failed to load plugin", "error", err)
+				continue
+			}
+
+			err = plugin.Run()
+			if err != nil {
+				logger.Error("Failed to run plugin", "error", err)
+			}
+		case "back":
+			return // Go back to main menu
+		default:
+			logger.Error("Invalid plugins sub-choice")
+		}
+	}
 }
