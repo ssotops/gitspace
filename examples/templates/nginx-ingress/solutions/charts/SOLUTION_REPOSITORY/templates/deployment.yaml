@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "<SOLUTION_REPOSITORY>.fullname" . }}
+  labels:
+    {{- include "<SOLUTION_REPOSITORY>.labels" . | nindent 4 }}
+  annotations:
+    secret.reloader.stakater.com/reload: {{ include "<SOLUTION_REPOSITORY>.fullname" . }}
+  {{- range $key, $value := .Values.deploymentAnnotations }}
+      {{- $key | nindent 4 }}: {{ $value | quote }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "<SOLUTION_REPOSITORY>.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "<SOLUTION_REPOSITORY>.selectorLabels" . | nindent 8 }}
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      serviceAccountName: {{ include "<SOLUTION_REPOSITORY>.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+          - configMapRef:
+              name: {{ template "<SOLUTION_REPOSITORY>.fullname" . }}
+          - secretRef:
+              name: {{ template "<SOLUTION_REPOSITORY>.fullname" . }}
+          env:
+          - name: CONSOLE_URL
+            value: "{{ .Values.<SOLUTION_REPOSITORY>.console }}"
+          - name: CHART_VERSION
+            value: "{{ .Chart.Version }}"
+          - name: DOCKER_TAG
+            value: "{{ .Chart.AppVersion }}"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 1
+            timeoutSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+            timeoutSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}

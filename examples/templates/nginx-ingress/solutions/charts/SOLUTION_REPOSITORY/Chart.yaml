@@ -1,0 +1,7 @@
+apiVersion: v2
+# appVersion: 8c5fd0ea4e0523c953b317fc5fe9fa89dac9688f
+appVersion: 1.0.0
+description: A Helm chart for Kubernetes
+name: <SOLUTION_REPOSITORY>
+type: application
+version: <SOLUTION_REPOSITORY_CHART_VERSION>
