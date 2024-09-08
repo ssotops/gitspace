@@ -1,0 +1,10 @@
+# <ROOT>/<GITOPS_REPOSITORY>/registry/environments/<GITOPS_ENV>/SOLUTION_REPOSITORY/Chart.yaml
+apiVersion: v2
+dependencies:
+  - name: <SOLUTION_REPOSITORY>
+    repository: http://chartmuseum.chartmuseum.svc.cluster.local:8080
+    version: <GITOPS_CHART_DEPENDENCY_VERSION>
+description: <SOLUTION_REPOSITORY>
+name: <SOLUTION_REPOSITORY>
+type: application
+version: <GITOPS_CHART_VERSION>

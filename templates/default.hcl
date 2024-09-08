@@ -39,6 +39,14 @@ repositories {
       }
     }
 
+    startsWith { // Changed from name to isExactly
+      values = ["gitspace-plugin", "gitspace-template"]
+      repository {
+        type = "helper"
+        labels = ["gitspace"]
+      }
+    }
+
     auth {
       type = "ssh"
       keyPath = "$SSH_KEY_PATH"
