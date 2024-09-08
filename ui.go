@@ -528,27 +528,27 @@ func selectInstalledPlugin(logger *log.Logger, prompt string) (string, error) {
 	return selectedPlugin, nil
 }
 
-func promptForEmptyRepos(emptyRepos []string) []string {
-	options := []huh.Option[string]{
-		{Key: "none", Value: "None"},
-		{Key: "all", Value: "All"},
-	}
-	for _, repo := range emptyRepos {
-		options = append(options, huh.Option[string]{Key: repo, Value: repo})
-	}
+// func promptForEmptyRepos(emptyRepos []string) []string {
+// 	options := []huh.Option[string]{
+// 		{Key: "none", Value: "None"},
+// 		{Key: "all", Value: "All"},
+// 	}
+// 	for _, repo := range emptyRepos {
+// 		options = append(options, huh.Option[string]{Key: repo, Value: repo})
+// 	}
 
-	var selected []string
-	huh.NewMultiSelect[string]().
-		Title("Select empty repositories to clone:").
-		Options(options...).
-		Value(&selected).
-		Run()
+// 	var selected []string
+// 	huh.NewMultiSelect[string]().
+// 		Title("Select empty repositories to clone:").
+// 		Options(options...).
+// 		Value(&selected).
+// 		Run()
 
-	if contains(selected, "None") {
-		return []string{}
-	}
-	if contains(selected, "All") {
-		return emptyRepos
-	}
-	return selected
-}
+// 	if contains(selected, "None") {
+// 		return []string{}
+// 	}
+// 	if contains(selected, "All") {
+// 		return emptyRepos
+// 	}
+// 	return selected
+// }
