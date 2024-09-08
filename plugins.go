@@ -6,28 +6,28 @@ import (
 	"os/exec"
 	"path/filepath"
 	"plugin"
-  "strings"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
-	"github.com/hashicorp/hcl/v2/hclsimple"
+	"github.com/pelletier/go-toml/v2"
 )
 
 type PluginManifest struct {
 	Plugin struct {
-		Name        string `hcl:"name,label"`
-		Version     string `hcl:"version"`
-		Description string `hcl:"description,optional"`
-		Author      string `hcl:"author,optional"`
-		EntryPoint  string `hcl:"entry_point"`
+		Name        string `toml:"name"`
+		Version     string `toml:"version"`
+		Description string `toml:"description,omitempty"`
+		Author      string `toml:"author,omitempty"`
+		EntryPoint  string `toml:"entry_point"`
 		Source      struct {
-			Type       string `hcl:"type,optional"`
-			Repository string `hcl:"repository,optional"`
-			Branch     string `hcl:"branch,optional"`
-			URL        string `hcl:"url,optional"`
-			Path       string `hcl:"path,optional"`
-		} `hcl:"source,block"`
-	} `hcl:"plugin,block"`
+			Type       string `toml:"type,omitempty"`
+			Repository string `toml:"repository,omitempty"`
+			Branch     string `toml:"branch,omitempty"`
+			URL        string `toml:"url,omitempty"`
+			Path       string `toml:"path,omitempty"`
+		} `toml:"source"`
+	} `toml:"plugin"`
 }
 
 type GitspacePlugin interface {
@@ -74,23 +74,23 @@ func installPlugin(logger *log.Logger, source string) error {
 		// Handle directory installation
 		logger.Debug("Installing from directory", "path", absSource)
 		return installPluginFromDirectory(logger, absSource, pluginsDir)
-	} else if filepath.Ext(absSource) == ".hcl" {
-		// Handle .hcl file installation
-		logger.Debug("Installing from .hcl file", "path", absSource)
+	} else if filepath.Ext(absSource) == ".toml" {
+		// Handle .toml file installation
+		logger.Debug("Installing from .toml file", "path", absSource)
 		return installPluginFromManifest(logger, absSource, pluginsDir)
 	} else {
-		return fmt.Errorf("invalid source: must be a directory or .hcl file")
+		return fmt.Errorf("invalid source: must be a directory or .toml file")
 	}
 }
 
 func installPluginFromDirectory(logger *log.Logger, sourceDir, pluginsDir string) error {
-	// Find the .hcl file in the source directory
+	// Find the .toml file in the source directory
 	var manifestPath string
 	err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && filepath.Ext(path) == ".hcl" {
+		if !info.IsDir() && filepath.Ext(path) == ".toml" {
 			manifestPath = path
 			return filepath.SkipAll
 		}
@@ -100,7 +100,7 @@ func installPluginFromDirectory(logger *log.Logger, sourceDir, pluginsDir string
 		return fmt.Errorf("failed to find manifest file: %w", err)
 	}
 	if manifestPath == "" {
-		return fmt.Errorf("no .hcl manifest file found in the directory")
+		return fmt.Errorf("no .toml manifest file found in the directory")
 	}
 
 	// Install using the found manifest file
@@ -156,7 +156,7 @@ func installPluginFromManifest(logger *log.Logger, manifestPath, pluginsDir stri
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && filepath.Ext(path) != ".hcl" {
+		if !info.IsDir() && filepath.Ext(path) != ".toml" {
 			relPath, _ := filepath.Rel(sourceDir, path)
 			destPath := filepath.Join(pluginDir, relPath)
 			logger.Debug("Copying file", "from", path, "to", destPath)
@@ -175,8 +175,13 @@ func installPluginFromManifest(logger *log.Logger, manifestPath, pluginsDir stri
 }
 
 func loadPluginManifest(path string) (*PluginManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read manifest file: %w", err)
+	}
+
 	var manifest PluginManifest
-	err := hclsimple.DecodeFile(path, nil, &manifest)
+	err = toml.Unmarshal(data, &manifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode manifest: %w", err)
 	}

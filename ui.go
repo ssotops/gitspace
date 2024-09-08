@@ -36,7 +36,7 @@ func showMainMenu() string {
 			huh.NewOption("Repositories", "repositories"),
 			huh.NewOption("Symlinks", "symlinks"),
 			huh.NewOption("Sync Labels", "sync"),
-			huh.NewOption("Plugins", "plugins"), // New option
+			huh.NewOption("Plugins", "plugins"),
 			huh.NewOption("Gitspace", "gitspace"),
 			huh.NewOption("Quit", "quit"),
 		).
@@ -63,10 +63,10 @@ func handleMainMenu(logger *log.Logger, config **Config) bool {
 	case "sync":
 		syncLabels(logger, *config)
 	case "gitspace":
-		handleGitspaceCommand(logger, *config)
+		handleGitspaceCommand(logger, config)
 	case "symlinks":
 		handleSymlinksCommand(logger, *config)
-	case "plugins": // New case
+	case "plugins":
 		handlePluginsCommand(logger, *config)
 	case "quit":
 		fmt.Println("Exiting Gitspace. Goodbye!")
@@ -223,7 +223,7 @@ func handleConfigPathsCommand(logger *log.Logger) {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && filepath.Ext(path) == ".hcl" {
+		if !info.IsDir() && filepath.Ext(path) == ".toml" {
 			fmt.Printf("   %s\n", pathStyle.Render(path))
 		}
 		return nil
@@ -243,7 +243,7 @@ func handleConfigPathsCommand(logger *log.Logger) {
 				logger.Error("Error reading symlink", "path", path, "error", err)
 				return nil
 			}
-			if filepath.Ext(realPath) == ".hcl" {
+			if filepath.Ext(realPath) == ".toml" {
 				fmt.Printf("   %s -> %s\n", symlinkStyle.Render(path), pathStyle.Render(realPath))
 			}
 		}
@@ -255,8 +255,6 @@ func handleConfigPathsCommand(logger *log.Logger) {
 
 	fmt.Println() // Add an extra newline for spacing
 }
-
-// Add this function to ui.go
 
 func handleConfigCommand(logger *log.Logger) {
 	cacheDir, err := getCacheDir()
@@ -277,7 +275,7 @@ func handleConfigCommand(logger *log.Logger) {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && filepath.Ext(path) == ".hcl" {
+		if !info.IsDir() && filepath.Ext(path) == ".toml" {
 			fmt.Printf("   %s\n", pathStyle.Render(path))
 		}
 		return nil
@@ -297,7 +295,7 @@ func handleConfigCommand(logger *log.Logger) {
 				logger.Error("Error reading symlink", "path", path, "error", err)
 				return nil
 			}
-			if filepath.Ext(realPath) == ".hcl" {
+			if filepath.Ext(realPath) == ".toml" {
 				fmt.Printf("   %s -> %s\n", symlinkStyle.Render(path), pathStyle.Render(realPath))
 			}
 		}
@@ -310,7 +308,7 @@ func handleConfigCommand(logger *log.Logger) {
 	fmt.Println() // Add an extra newline for spacing
 }
 
-func handleGitspaceCommand(logger *log.Logger, config *Config) {
+func handleGitspaceCommand(logger *log.Logger, config **Config) {
 	for {
 		var choice string
 		err := huh.NewSelect[string]().
@@ -342,9 +340,9 @@ func handleGitspaceCommand(logger *log.Logger, config *Config) {
 			if err != nil {
 				logger.Error("Error loading config", "error", err)
 			} else {
-				config = newConfig
-				if newConfig != nil && newConfig.Repositories != nil && newConfig.Repositories.GitSpace != nil {
-					logger.Info("Config loaded successfully", "path", newConfig.Repositories.GitSpace.Path)
+				*config = newConfig
+				if newConfig != nil {
+					logger.Info("Config loaded successfully", "path", newConfig.Global.Path)
 				} else {
 					logger.Info("No config file loaded")
 				}
@@ -400,7 +398,7 @@ func handleSymlinksCommand(logger *log.Logger, config *Config) {
 // ensureConfig checks if a valid config is loaded and prompts the user if it's not.
 // It returns true if a valid config is available or newly loaded, false otherwise.
 func ensureConfig(logger *log.Logger, config **Config) bool {
-	if *config == nil || (*config).Repositories == nil {
+	if *config == nil || (*config).Global.Path == "" {
 		logger.Warn("No valid config loaded")
 		var choice string
 		err := huh.NewSelect[string]().
@@ -460,7 +458,7 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 
 		switch subChoice {
 		case "install":
-			source, err := getPathWithCompletion("Enter the plugin source (directory or .hcl file)")
+			source, err := getPathWithCompletion("Enter the plugin source (directory or .toml file)")
 			if err != nil {
 				logger.Error("Error getting plugin source", "error", err)
 				continue
