@@ -14,10 +14,11 @@ import (
 
 type Config struct {
 	Global struct {
-		Path   string   `toml:"path"`
-		Labels []string `toml:"labels"`
-		SCM    string   `toml:"scm"`
-		Owner  string   `toml:"owner"`
+		Path                   string   `toml:"path"`
+		Labels                 []string `toml:"labels"`
+		SCM                    string   `toml:"scm"`
+		Owner                  string   `toml:"owner"`
+		EmptyRepoInitialBranch string   `toml:"empty_repo_initial_branch"`
 	} `toml:"global"`
 
 	Auth struct {
@@ -134,6 +135,9 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if config.Global.Owner == "" {
 		return nil, fmt.Errorf("global.owner is required")
+	}
+	if config.Global.EmptyRepoInitialBranch == "" {
+		config.Global.EmptyRepoInitialBranch = "master"
 	}
 
 	return config, nil
