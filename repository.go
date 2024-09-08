@@ -3,9 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
+  "time"
 
 	"github.com/charmbracelet/log"
 	"github.com/go-git/go-git/v5"
@@ -87,11 +88,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 
 		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 			// Clone the repository if it doesn't exist
-			_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
-				URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Global.SCM, config.Global.Owner, repo),
-				Progress: os.Stdout,
-				Auth:     sshAuth,
-			})
+			err := cloneRepo(repoPath, config.Global.SCM, config.Global.Owner, repo, sshAuth, sshKeyPath, config.Global.EmptyRepoInitialBranch, logger)
 			if err != nil {
 				result.Error = err
 				logger.Error("Clone failed", "repo", repo, "error", err)
@@ -100,7 +97,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 				logger.Info("Clone successful", "repo", repo)
 			}
 		} else {
-			// Open the existing repository
+			// Update existing repository
 			r, err := git.PlainOpen(repoPath)
 			if err != nil {
 				result.Error = err
@@ -108,7 +105,6 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 				continue
 			}
 
-			// Fetch updates
 			err = r.Fetch(&git.FetchOptions{
 				Auth:     sshAuth,
 				Progress: os.Stdout,
@@ -148,6 +144,73 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 
 	// Print summary table
 	printSummaryTable(config, results, repoDir)
+}
+
+func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKeyPath, initialBranch string, logger *log.Logger) error {
+	repoURL := fmt.Sprintf("git@%s:%s/%s.git", scm, owner, repo)
+
+	// First, try to clone normally
+	_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
+		URL:      repoURL,
+		Progress: os.Stdout,
+		Auth:     sshAuth,
+	})
+
+	if err != nil {
+		if strings.Contains(err.Error(), "remote repository is empty") {
+			// If the repository is empty, use Git commands to clone it
+			logger.Info("Cloning empty repository", "repo", repo)
+			return cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch, logger)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch string, logger *log.Logger) error {
+	// Create the repository directory
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		return fmt.Errorf("failed to create repository directory: %w", err)
+	}
+
+	// Initialize the repository
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoPath
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to initialize repository: %w, output: %s", err, output)
+	}
+
+	// Add the remote
+	cmd = exec.Command("git", "remote", "add", "origin", repoURL)
+	cmd.Dir = repoPath
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to add remote: %w, output: %s", err, output)
+	}
+
+	// Create and checkout the initial branch
+	cmd = exec.Command("git", "checkout", "-b", initialBranch)
+	cmd.Dir = repoPath
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create and checkout initial branch: %w, output: %s", err, output)
+	}
+
+	// Create an initial empty commit
+	cmd = exec.Command("git", "commit", "--allow-empty", "-m", "Initial empty commit")
+	cmd.Dir = repoPath
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create initial commit: %w, output: %s", err, output)
+	}
+
+	// Push the initial commit
+	cmd = exec.Command("git", "push", "-u", "origin", initialBranch)
+	cmd.Dir = repoPath
+	cmd.Env = append(os.Environ(), fmt.Sprintf("GIT_SSH_COMMAND=ssh -i %s", sshKeyPath))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to push initial commit: %w, output: %s", err, output)
+	}
+
+	return nil
 }
 
 func updateIndexTOML(logger *log.Logger, config *Config, repoResults map[string]*RepoResult) error {

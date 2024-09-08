@@ -8,6 +8,11 @@ owner = "ssotops"
 type = "ssh"
 key_path = "$SSH_KEY_PATH"
 
+[groups.plugins-and-templates]
+match = "includes"
+values = ["plugin", "template"]
+type = "helper"
+
 [groups.git]
 match = "startsWith"
 values = ["git"]
@@ -25,14 +30,6 @@ match = "includes"
 values = ["sso"]
 type = "ssot"
 labels = ["auth", "security"]
-
-[groups.plugins]
-match = "includes"
-values = ["-plugin-"]
-
-[groups.templates]
-match = "includes"
-values = ["-template-"]
 
 [groups.scmany]
 match = "isExactly"

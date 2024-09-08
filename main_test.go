@@ -26,6 +26,7 @@ path = "gs"
 labels = ["feature", "bug"]
 scm = "github.com"
 owner = "ssotops"
+empty_repo_initial_branch = "main"
 
 [groups.service]
 match = "endsWith"
@@ -41,6 +42,7 @@ path = "gs"
 labels = ["feature", "bug"]
 scm = "github.com"
 owner = "ssotops"
+empty_repo_initial_branch = "master"
 
 [groups.test]
 match = "startsWith"
@@ -87,6 +89,7 @@ path = "test_repos"
 labels = ["feature", "bug"]
 scm = "github.com"
 owner = "testowner"
+empty_repo_initial_branch = "main"
 
 [groups.tools]
 match = "endsWith"
