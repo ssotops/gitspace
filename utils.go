@@ -27,3 +27,11 @@ func getCacheDirOrDefault(logger *log.Logger) string {
 	}
 	return cacheDir
 }
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}

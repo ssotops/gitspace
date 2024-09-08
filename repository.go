@@ -79,6 +79,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 
 	// Clone or update repositories
 	results := make(map[string]*RepoResult)
+	emptyRepos := []string{}
 
 	for _, repo := range filteredRepos {
 		repoPath := filepath.Join(repoDir, repo)
@@ -95,6 +96,9 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 			if err != nil {
 				result.Error = err
 				logger.Error("Clone failed", "repo", repo, "error", err)
+				if strings.Contains(err.Error(), "remote repository is empty") {
+					emptyRepos = append(emptyRepos, repo)
+				}
 			} else {
 				result.Cloned = true
 				logger.Info("Clone successful", "repo", repo)
@@ -138,6 +142,27 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 			logger.Error("Error creating global symlink", "repo", repo, "error", err)
 		} else {
 			result.GlobalSymlink = globalSymlinkPath
+		}
+	}
+
+	// Prompt user for empty repositories
+	if len(emptyRepos) > 0 {
+		selectedRepos := promptForEmptyRepos(emptyRepos)
+		for _, repo := range selectedRepos {
+			repoPath := filepath.Join(repoDir, repo)
+			_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
+				URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Global.SCM, config.Global.Owner, repo),
+				Progress: os.Stdout,
+				Auth:     sshAuth,
+			})
+			if err != nil {
+				results[repo].Error = err
+				logger.Error("Clone failed for empty repo", "repo", repo, "error", err)
+			} else {
+				results[repo].Cloned = true
+				results[repo].Error = nil
+				logger.Info("Clone successful for empty repo", "repo", repo)
+			}
 		}
 	}
 
