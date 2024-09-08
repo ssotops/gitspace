@@ -16,32 +16,37 @@ import (
 )
 
 type Config struct {
-	Repositories *struct {
-		GitSpace *struct {
-			Path string `hcl:"path"`
-		} `hcl:"gitspace,block"`
+	Gitspace struct {
+		Path   string   `hcl:"path"`
 		Labels []string `hcl:"labels,optional"`
 		Clone  *struct {
-			SCM        string        `hcl:"scm"`
-			Owner      string        `hcl:"owner"`
-			EndsWith   *FilterConfig `hcl:"endsWith,block"`
-			StartsWith *FilterConfig `hcl:"startsWith,block"`
-			Includes   *FilterConfig `hcl:"includes,block"`
-			IsExactly  *FilterConfig `hcl:"isExactly,block"`
-			Auth       *struct {
-				Type    string `hcl:"type"`
-				KeyPath string `hcl:"keyPath"`
-			} `hcl:"auth,block"`
+			SCM        string                     `hcl:"scm"`
+			Owner      string                     `hcl:"owner"`
+			Auth       *AuthConfig                `hcl:"auth,block"`
+			StartsWith map[string]*DirectiveGroup `hcl:"startsWith,block"`
+			EndsWith   map[string]*DirectiveGroup `hcl:"endsWith,block"`
+			Includes   map[string]*DirectiveGroup `hcl:"includes,block"`
+			IsExactly  map[string]*DirectiveGroup `hcl:"isExactly,block"`
 		} `hcl:"clone,block"`
-	} `hcl:"repositories,block"`
+	} `hcl:"gitspace,block"`
 }
 
-type FilterConfig struct {
-	Values     []string `hcl:"values"`
-	Repository *struct {
-		Type   string   `hcl:"type"`
-		Labels []string `hcl:"labels"`
-	} `hcl:"repository,block"`
+type AuthConfig struct {
+	Type    string `hcl:"type"`
+	KeyPath string `hcl:"keyPath"`
+}
+
+type DirectiveGroup struct {
+	Values []string `hcl:"values"`
+	Type   string   `hcl:"type,optional"`
+	Labels []string `hcl:"labels,optional"`
+}
+
+type GroupConfig struct {
+	Name   string   `hcl:"name,label"`
+	Values []string `hcl:"values"`
+	Type   string   `hcl:"type,optional"`
+	Labels []string `hcl:"labels,optional"`
 }
 
 type IndexHCL struct {
@@ -136,26 +141,31 @@ func decodeHCLFile(filename string) (Config, error) {
 		return Config{}, fmt.Errorf("failed to decode HCL: %s", formatDiagnostics(decodeDiags))
 	}
 
+	// Validate required fields
+	if config.Gitspace.Path == "" {
+		return Config{}, fmt.Errorf("gitspace.path is required")
+	}
+	if config.Gitspace.Clone == nil {
+		return Config{}, fmt.Errorf("gitspace.clone block is required")
+	}
+	if config.Gitspace.Clone.SCM == "" {
+		return Config{}, fmt.Errorf("gitspace.clone.scm is required")
+	}
+	if config.Gitspace.Clone.Owner == "" {
+		return Config{}, fmt.Errorf("gitspace.clone.owner is required")
+	}
+
 	return config, nil
 }
 
 func formatDiagnostics(diags hcl.Diagnostics) string {
 	var messages []string
 	for _, diag := range diags {
-		severityStr := ""
-		switch diag.Severity {
-		case hcl.DiagError:
-			severityStr = "Error"
-		case hcl.DiagWarning:
-			severityStr = "Warning"
-		default:
-			severityStr = "Unknown"
+		severity := "Error"
+		if diag.Severity == hcl.DiagWarning {
+			severity = "Warning"
 		}
-
-		messages = append(messages, fmt.Sprintf("%s: %s at %s", severityStr, diag.Summary, diag.Subject))
-		if diag.Detail != "" {
-			messages = append(messages, fmt.Sprintf("  Detail: %s", diag.Detail))
-		}
+		messages = append(messages, fmt.Sprintf("%s: %s (%s)", severity, diag.Summary, diag.Detail))
 	}
 	return strings.Join(messages, "\n")
 }

@@ -12,7 +12,7 @@ func syncLabels(logger *log.Logger, config *Config) {
 	if !ensureConfig(logger, &config) {
 		return
 	}
-	repos, err := lib.GetRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	repos, err := lib.GetRepositories(config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner)
 	if err != nil {
 		logger.Error("Error fetching repositories", "error", err)
 		return
@@ -28,28 +28,17 @@ func syncLabels(logger *log.Logger, config *Config) {
 		return
 	}
 
-	applyLabelChanges(changes, logger, config.Repositories.Clone.Owner)
+	applyLabelChanges(changes, logger, config.Gitspace.Clone.Owner)
 }
 
 func calculateLabelChanges(repos []string, config *Config) map[string][]string {
 	changes := make(map[string][]string)
 
 	for _, repo := range repos {
-		changes[repo] = append(changes[repo], config.Repositories.Labels...)
+		changes[repo] = append(changes[repo], config.Gitspace.Labels...)
 
-		if config.Repositories.Clone != nil {
-			if matchesFilter(repo, config.Repositories.Clone.StartsWith) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.StartsWith)...)
-			}
-			if matchesFilter(repo, config.Repositories.Clone.EndsWith) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.EndsWith)...)
-			}
-			if matchesFilter(repo, config.Repositories.Clone.Includes) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.Includes)...)
-			}
-			if matchesFilter(repo, config.Repositories.Clone.IsExactly) {
-				changes[repo] = append(changes[repo], getLabelsFromFilter(config.Repositories.Clone.IsExactly)...)
-			}
+		if config.Gitspace.Clone != nil {
+			changes[repo] = append(changes[repo], getLabelsForRepo(repo, config)...)
 		}
 
 		changes[repo] = removeDuplicates(changes[repo])
@@ -58,9 +47,30 @@ func calculateLabelChanges(repos []string, config *Config) map[string][]string {
 	return changes
 }
 
-func getLabelsFromFilter(filter *FilterConfig) []string {
-	if filter != nil && filter.Repository != nil {
-		return filter.Repository.Labels
+func getLabelsForRepo(repo string, config *Config) []string {
+	var labels []string
+
+	if matchesDirectiveGroup(repo, config.Gitspace.Clone.StartsWith) {
+		labels = append(labels, getLabelsFromDirectiveGroup(config.Gitspace.Clone.StartsWith, repo)...)
+	}
+	if matchesDirectiveGroup(repo, config.Gitspace.Clone.EndsWith) {
+		labels = append(labels, getLabelsFromDirectiveGroup(config.Gitspace.Clone.EndsWith, repo)...)
+	}
+	if matchesDirectiveGroup(repo, config.Gitspace.Clone.Includes) {
+		labels = append(labels, getLabelsFromDirectiveGroup(config.Gitspace.Clone.Includes, repo)...)
+	}
+	if matchesDirectiveGroup(repo, config.Gitspace.Clone.IsExactly) {
+		labels = append(labels, getLabelsFromDirectiveGroup(config.Gitspace.Clone.IsExactly, repo)...)
+	}
+
+	return labels
+}
+
+func getLabelsFromDirectiveGroup(directive map[string]*DirectiveGroup, repo string) []string {
+	for _, group := range directive {
+		if matchesGroup(repo, group) {
+			return group.Labels
+		}
 	}
 	return []string{}
 }

@@ -343,8 +343,8 @@ func handleGitspaceCommand(logger *log.Logger, config *Config) {
 				logger.Error("Error loading config", "error", err)
 			} else {
 				config = newConfig
-				if newConfig != nil && newConfig.Repositories != nil && newConfig.Repositories.GitSpace != nil {
-					logger.Info("Config loaded successfully", "path", newConfig.Repositories.GitSpace.Path)
+				if newConfig != nil && newConfig.Gitspace.Path != "" {
+					logger.Info("Config loaded successfully", "path", newConfig.Gitspace.Path)
 				} else {
 					logger.Info("No config file loaded")
 				}
@@ -400,7 +400,7 @@ func handleSymlinksCommand(logger *log.Logger, config *Config) {
 // ensureConfig checks if a valid config is loaded and prompts the user if it's not.
 // It returns true if a valid config is available or newly loaded, false otherwise.
 func ensureConfig(logger *log.Logger, config **Config) bool {
-	if *config == nil || (*config).Repositories == nil {
+	if *config == nil || (*config).Gitspace.Clone == nil {
 		logger.Warn("No valid config loaded")
 		var choice string
 		err := huh.NewSelect[string]().

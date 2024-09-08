@@ -10,8 +10,8 @@ import (
 
 func createLocalSymlinks(logger *log.Logger, config *Config) {
 	changes := make(map[string]string)
-	baseDir := config.Repositories.GitSpace.Path
-	repoDir := filepath.Join(getCacheDirOrDefault(logger), ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	baseDir := config.Gitspace.Path
+	repoDir := filepath.Join(getCacheDirOrDefault(logger), ".repositories", config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner)
 
 	err := filepath.Walk(repoDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -50,7 +50,7 @@ func createGlobalSymlinks(logger *log.Logger, config *Config) {
 		logger.Error("Error getting global symlink directory", "error", err)
 		return
 	}
-	repoDir := filepath.Join(getCacheDirOrDefault(logger), ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	repoDir := filepath.Join(getCacheDirOrDefault(logger), ".repositories", config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner)
 
 	err = filepath.Walk(repoDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -84,7 +84,7 @@ func createGlobalSymlinks(logger *log.Logger, config *Config) {
 
 func deleteLocalSymlinks(logger *log.Logger, config *Config) {
 	changes := make(map[string]string)
-	baseDir := config.Repositories.GitSpace.Path
+	baseDir := config.Gitspace.Path
 
 	err := filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -145,7 +145,7 @@ func getGlobalSymlinkDir(config *Config) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get cache directory: %w", err)
 	}
-	return filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner), nil
+	return filepath.Join(cacheDir, config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner), nil
 }
 
 func createSymlink(source, target string) error {

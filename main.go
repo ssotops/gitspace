@@ -27,7 +27,7 @@ func main() {
 		logger.Error("Error getting config", "error", err)
 		return
 	}
-	logger.Debug("Config loaded successfully", "config_path", config.Repositories.GitSpace.Path)
+	logger.Debug("Config loaded successfully", "config_path", config.Gitspace.Path)
 
 	// Main menu loop
 	for {
@@ -46,8 +46,8 @@ func main() {
 }
 
 func printConfigPath(config *Config) {
-	if config != nil && config.Repositories != nil && config.Repositories.GitSpace != nil && config.Repositories.GitSpace.Path != "" {
-		fmt.Printf("Current config path: %s\n\n", config.Repositories.GitSpace.Path)
+	if config != nil && config.Gitspace.Path != "" {
+		fmt.Printf("Current config path: %s\n\n", config.Gitspace.Path)
 	} else {
 		fmt.Println("No config file loaded.")
 	}

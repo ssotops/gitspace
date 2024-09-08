@@ -1,1 +1,1 @@
-templates/default.hcl
+examples/configs/default_v2.hcl

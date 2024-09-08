@@ -32,8 +32,8 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 		return
 	}
 
-	baseDir := config.Repositories.GitSpace.Path
-	repoDir := filepath.Join(cacheDir, ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	baseDir := config.Gitspace.Path
+	repoDir := filepath.Join(cacheDir, ".repositories", config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner)
 	err = os.MkdirAll(repoDir, 0755)
 	if err != nil {
 		logger.Error("Error creating directories", "error", err)
@@ -41,7 +41,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 	}
 
 	// Setup SSH auth
-	sshKeyPath, err := getSSHKeyPath(config.Repositories.Clone.Auth.KeyPath)
+	sshKeyPath, err := getSSHKeyPath(config.Gitspace.Clone.Auth.KeyPath)
 	if err != nil {
 		logger.Error("Error getting SSH key path", "error", err)
 		return
@@ -64,7 +64,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 	}
 
 	// Get list of repositories to clone
-	repos, err := lib.GetRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	repos, err := lib.GetRepositories(config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner)
 	if err != nil {
 		logger.Error("Error fetching repositories", "error", err)
 		return
@@ -89,7 +89,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 			// Clone the repository if it doesn't exist
 			_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
-				URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo),
+				URL:      fmt.Sprintf("git@%s:%s/%s.git", config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner, repo),
 				Progress: os.Stdout,
 				Auth:     sshAuth,
 			})
@@ -133,7 +133,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 		}
 
 		// Create global symlink
-		globalSymlinkPath := filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)
+		globalSymlinkPath := filepath.Join(cacheDir, config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner, repo)
 		err = createSymlink(repoPath, globalSymlinkPath)
 		if err != nil {
 			logger.Error("Error creating global symlink", "repo", repo, "error", err)
@@ -154,7 +154,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 func syncRepositories(logger *log.Logger, config *Config) {
 	logger.Info("Syncing repositories...")
 
-	if config == nil || config.Repositories == nil || config.Repositories.Clone == nil {
+	if config == nil || config.Gitspace.Clone == nil {
 		logger.Error("No valid config loaded. Please load a config file first.")
 		return
 	}
@@ -165,11 +165,11 @@ func syncRepositories(logger *log.Logger, config *Config) {
 		return
 	}
 
-	repoDir := filepath.Join(cacheDir, ".repositories", config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
-	baseDir := config.Repositories.GitSpace.Path
+	repoDir := filepath.Join(cacheDir, ".repositories", config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner)
+	baseDir := config.Gitspace.Path
 
 	// Setup SSH auth
-	sshKeyPath, err := getSSHKeyPath(config.Repositories.Clone.Auth.KeyPath)
+	sshKeyPath, err := getSSHKeyPath(config.Gitspace.Clone.Auth.KeyPath)
 	if err != nil {
 		logger.Error("Error getting SSH key path", "error", err)
 		return
@@ -188,7 +188,7 @@ func syncRepositories(logger *log.Logger, config *Config) {
 	}
 
 	// Get list of repositories to sync
-	repos, err := lib.GetRepositories(config.Repositories.Clone.SCM, config.Repositories.Clone.Owner)
+	repos, err := lib.GetRepositories(config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner)
 	if err != nil {
 		logger.Error("Error fetching repositories", "error", err)
 		return
@@ -241,7 +241,7 @@ func syncRepositories(logger *log.Logger, config *Config) {
 		}
 
 		// Create global symlink
-		globalSymlinkPath := filepath.Join(cacheDir, config.Repositories.Clone.SCM, config.Repositories.Clone.Owner, repo)
+		globalSymlinkPath := filepath.Join(cacheDir, config.Gitspace.Clone.SCM, config.Gitspace.Clone.Owner, repo)
 		err = createSymlink(repoPath, globalSymlinkPath)
 		if err != nil {
 			logger.Error("Error creating global symlink", "repo", repo, "error", err)
@@ -260,39 +260,41 @@ func syncRepositories(logger *log.Logger, config *Config) {
 }
 
 func getRepoType(config *Config, repo string) string {
-	if matchesFilter(repo, config.Repositories.Clone.StartsWith) {
-		return config.Repositories.Clone.StartsWith.Repository.Type
-	}
-	if matchesFilter(repo, config.Repositories.Clone.EndsWith) {
-		return config.Repositories.Clone.EndsWith.Repository.Type
-	}
-	if matchesFilter(repo, config.Repositories.Clone.Includes) {
-		return config.Repositories.Clone.Includes.Repository.Type
-	}
-	if matchesFilter(repo, config.Repositories.Clone.IsExactly) {
-		return config.Repositories.Clone.IsExactly.Repository.Type
+	if matchingGroup := findMatchingGroup(config, repo); matchingGroup != nil {
+		return matchingGroup.Type
 	}
 	return "default"
 }
 
 func getRepoLabels(config *Config, repo string) []string {
 	var labels []string
-	labels = append(labels, config.Repositories.Labels...)
+	labels = append(labels, config.Gitspace.Labels...)
 
-	if matchesFilter(repo, config.Repositories.Clone.StartsWith) {
-		labels = append(labels, config.Repositories.Clone.StartsWith.Repository.Labels...)
-	}
-	if matchesFilter(repo, config.Repositories.Clone.EndsWith) {
-		labels = append(labels, config.Repositories.Clone.EndsWith.Repository.Labels...)
-	}
-	if matchesFilter(repo, config.Repositories.Clone.Includes) {
-		labels = append(labels, config.Repositories.Clone.Includes.Repository.Labels...)
-	}
-	if matchesFilter(repo, config.Repositories.Clone.IsExactly) {
-		labels = append(labels, config.Repositories.Clone.IsExactly.Repository.Labels...)
+	if matchingGroup := findMatchingGroup(config, repo); matchingGroup != nil {
+		labels = append(labels, matchingGroup.Labels...)
 	}
 
 	return removeDuplicates(labels)
+}
+
+func findMatchingGroup(config *Config, repo string) *DirectiveGroup {
+	cloneConfig := config.Gitspace.Clone
+	directives := []map[string]*DirectiveGroup{
+		cloneConfig.StartsWith,
+		cloneConfig.EndsWith,
+		cloneConfig.Includes,
+		cloneConfig.IsExactly,
+	}
+
+	for _, directive := range directives {
+		for _, group := range directive {
+			if matchesGroup(repo, group) {
+				return group
+			}
+		}
+	}
+
+	return nil
 }
 
 func updateIndexHCL(logger *log.Logger, config *Config, repoResults map[string]*RepoResult) error {
@@ -321,8 +323,8 @@ func updateIndexHCL(logger *log.Logger, config *Config, repoResults map[string]*
 	reposBlock := rootBody.AppendNewBlock("repositories", nil)
 	reposBody := reposBlock.Body()
 
-	scm := config.Repositories.Clone.SCM
-	owner := config.Repositories.Clone.Owner
+	scm := config.Gitspace.Clone.SCM
+	owner := config.Gitspace.Clone.Owner
 
 	// Create SCM block
 	scmBlock := reposBody.AppendNewBlock(scm, nil)
@@ -415,31 +417,32 @@ func updateIndexHCL(logger *log.Logger, config *Config, repoResults map[string]*
 
 func filterRepositories(repos []string, config *Config) []string {
 	var filtered []string
-	cloneConfig := config.Repositories.Clone
+	cloneConfig := config.Gitspace.Clone
 
 	for _, repo := range repos {
-		if matchesFilter(repo, cloneConfig.IsExactly) {
+		if matchesDirectiveGroup(repo, cloneConfig.IsExactly) {
 			filtered = append(filtered, repo)
 			continue
 		}
 
-		if matchesFilter(repo, cloneConfig.StartsWith) {
+		if matchesDirectiveGroup(repo, cloneConfig.StartsWith) {
 			filtered = append(filtered, repo)
 			continue
 		}
 
-		if matchesFilter(repo, cloneConfig.EndsWith) {
+		if matchesDirectiveGroup(repo, cloneConfig.EndsWith) {
 			filtered = append(filtered, repo)
 			continue
 		}
 
-		if matchesFilter(repo, cloneConfig.Includes) {
+		if matchesDirectiveGroup(repo, cloneConfig.Includes) {
 			filtered = append(filtered, repo)
 			continue
 		}
 
-		if cloneConfig.IsExactly == nil && cloneConfig.StartsWith == nil &&
-			cloneConfig.EndsWith == nil && cloneConfig.Includes == nil {
+		// If no directives are specified, include all repositories
+		if len(cloneConfig.IsExactly) == 0 && len(cloneConfig.StartsWith) == 0 &&
+			len(cloneConfig.EndsWith) == 0 && len(cloneConfig.Includes) == 0 {
 			filtered = append(filtered, repo)
 		}
 	}
@@ -447,11 +450,17 @@ func filterRepositories(repos []string, config *Config) []string {
 	return filtered
 }
 
-func matchesFilter(repo string, filter *FilterConfig) bool {
-	if filter == nil || len(filter.Values) == 0 {
-		return false
+func matchesDirectiveGroup(repo string, directive map[string]*DirectiveGroup) bool {
+	for _, group := range directive {
+		if matchesGroup(repo, group) {
+			return true
+		}
 	}
-	for _, value := range filter.Values {
+	return false
+}
+
+func matchesGroup(repo string, group *DirectiveGroup) bool {
+	for _, value := range group.Values {
 		if strings.HasPrefix(strings.ToLower(repo), strings.ToLower(value)) ||
 			strings.HasSuffix(strings.ToLower(repo), strings.ToLower(value)) ||
 			strings.Contains(strings.ToLower(repo), strings.ToLower(value)) ||
