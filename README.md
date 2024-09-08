@@ -36,60 +36,46 @@ This script will remove gitspace and its configuration files.
 For manual uninstallation:
 
 1. Remove the gitspace executable from your PATH.
-2. Optionally, remove the configuration directory (usually `~/.gitspace`).
+2. Optionally, remove the configuration directory (usually `~/.ssot/gitspace`).
 
 ## Getting Started with gitspace
 
-1. Create a configuration file named `gs.hcl` in your project directory with the following content:
+1. Create a configuration file named `gs.toml` in your project directory with the following content:
 
-```hcl
-repositories {
-  gitspace {
-    path = "gs"
-  }
-  labels = ["feature", "bug"]
-  clone {
-    scm = "github.com"
-    owner = "ssotops"
-    
-    startsWith {
-      values = ["git"]
-      repository {
-        type = "gitops"
-        labels = ["backend", "core"]
-      }
-    }
+```toml
+[global]
+path = "gs"
+labels = ["feature", "bug"]
+scm = "github.com"
+owner = "ssotops"
 
-    endsWith {
-      values = ["space"]
-      repository {
-        type = "solution"
-        labels = ["frontend", "experimental"]
-      }
-    }
+[auth]
+type = "ssh"
+key_path = "~/.ssh/my-key"
 
-    includes {
-      values = ["sso"]
-      repository {
-        type = "ssot"
-        labels = ["auth", "security"]
-      }
-    }
+[groups.git]
+match = "startsWith"
+values = ["git"]
+type = "gitops"
+labels = ["backend", "core"]
 
-    isExactly {
-      values = ["scmany"]
-      repository {
-        type = "helper"
-        labels = ["utility"]
-      }
-    }
+[groups.space]
+match = "endsWith"
+values = ["space"]
+type = "solution"
+labels = ["frontend", "experimental"]
 
-    auth {
-      type = "ssh"
-      keyPath = "~/.ssh/my-key"
-    }
-  }
-}
+[groups.sso]
+match = "includes"
+values = ["sso"]
+type = "ssot"
+labels = ["auth", "security"]
+
+[groups.scmany]
+match = "isExactly"
+values = ["scmany"]
+type = "helper"
+labels = ["utility"]
 ```
 
 2. Set up your GitHub token:
@@ -102,30 +88,33 @@ repositories {
    gitspace
    ```
 
-4. Follow the prompts to specify the path to your config file (or press Enter to use the default `./gs.hcl`).
+4. Follow the prompts to specify the path to your config file (or press Enter to use the default `./gs.toml`).
 
 5. gitspace will clone the repositories matching your configuration and create symlinks.
 
 ## Configuration Explanation
 
-- `path`: The base directory where gitspace will create symlinks to your cloned repositories.
-- `labels`: Global labels to be applied to all repositories.
-- `scm`: The source control management system (e.g., "github.com").
-- `owner`: The GitHub organization or user owning the repositories.
-- `auth`: Specifies the authentication method (SSH in this case) and the path to your SSH key.
-  - `keyPath`: Can be either a direct path to your SSH key (e.g., "~/.ssh/my-key") or an environment variable name prefixed with "$" (e.g., "$SSH_KEY_PATH"). If an environment variable is used, gitspace will read the key path from that variable.
-- `startsWith`, `endsWith`, `includes`, `isExactly`: Filters for repository names, each containing:
+- `[global]`: Global settings for gitspace.
+  - `path`: The base directory where gitspace will create symlinks to your cloned repositories.
+  - `labels`: Global labels to be applied to all repositories.
+  - `scm`: The source control management system (e.g., "github.com").
+  - `owner`: The GitHub organization or user owning the repositories.
+- `[auth]`: Authentication settings.
+  - `type`: The authentication method (e.g., "ssh").
+  - `key_path`: Path to your SSH key. Can be a direct path (e.g., "~/.ssh/my-key") or an environment variable prefixed with "$" (e.g., "$SSH_KEY_PATH").
+- `[groups.<name>]`: Repository grouping and filtering rules.
+  - `match`: The matching method ("startsWith", "endsWith", "includes", or "isExactly").
   - `values`: Array of strings to match against repository names.
-  - `repository`: Additional configuration for matched repositories.
-    - `type`: Type of the repository.
-    - `labels`: Labels specific to this repository type.
+  - `type`: Type of the repository for this group.
+  - `labels`: Labels specific to repositories in this group.
 
 ## Features
 
 - Clones multiple repositories based on specified criteria.
 - Creates symlinks for easy access to cloned repositories.
-- Applies labels to repositories based on global and specific configurations.
+- Applies labels to repositories based on global and group-specific configurations.
 - Provides a summary of cloning and symlinking operations.
+- Supports plugins for extending functionality.
 
 ## Support
 

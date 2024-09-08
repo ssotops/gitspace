@@ -1,0 +1,41 @@
+[global]
+path = "gs"
+labels = ["feature", "bug"]
+scm = "github.com"
+owner = "ssotops"
+
+[auth]
+type = "ssh"
+key_path = "$SSH_KEY_PATH"
+
+[groups.git]
+match = "startsWith"
+values = ["git"]
+type = "gitops"
+labels = ["backend", "core"]
+
+[groups.space]
+match = "endsWith"
+values = ["space"]
+type = "solution"
+labels = ["frontend", "experimental"]
+
+[groups.sso]
+match = "includes"
+values = ["sso"]
+type = "ssot"
+labels = ["auth", "security"]
+
+[groups.plugins]
+match = "includes"
+values = ["-plugin-"]
+
+[groups.templates]
+match = "includes"
+values = ["-template-"]
+
+[groups.scmany]
+match = "isExactly"
+values = ["scmany"]
+type = "helper"
+labels = ["utility"]

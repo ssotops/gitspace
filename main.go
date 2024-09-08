@@ -13,7 +13,6 @@ func main() {
 	logger := initLogger()
 	logger.Info("Gitspace starting up")
 
-	// Set up signal handling for graceful shutdown
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
@@ -27,9 +26,8 @@ func main() {
 		logger.Error("Error getting config", "error", err)
 		return
 	}
-	logger.Debug("Config loaded successfully", "config_path", config.Repositories.GitSpace.Path)
+	logger.Debug("Config loaded successfully", "config_path", config.Global.Path)
 
-	// Main menu loop
 	for {
 		select {
 		case <-signalChan:
@@ -39,15 +37,15 @@ func main() {
 			printConfigPath(config)
 			if handleMainMenu(logger, &config) {
 				logger.Info("User chose to quit. Exiting Gitspace...")
-				return // Exit the program if user chose to quit
+				return
 			}
 		}
 	}
 }
 
 func printConfigPath(config *Config) {
-	if config != nil && config.Repositories != nil && config.Repositories.GitSpace != nil && config.Repositories.GitSpace.Path != "" {
-		fmt.Printf("Current config path: %s\n\n", config.Repositories.GitSpace.Path)
+	if config != nil && config.Global.Path != "" {
+		fmt.Printf("Current config path: %s\n\n", config.Global.Path)
 	} else {
 		fmt.Println("No config file loaded.")
 	}
