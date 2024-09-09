@@ -428,7 +428,6 @@ func compileAndRunPlugin(logger *log.Logger, pluginDir, pluginName string) error
 		fmt.Sprintf("GOOS=%s", runtime.GOOS),
 	)
 
-	logger.Debug("Compiling plugin", "command", buildCmd.String(), "env", buildCmd.Env)
 	output, err := buildCmd.CombinedOutput()
 	if err != nil {
 		logger.Error("Plugin compilation failed", "output", string(output), "error", err)
