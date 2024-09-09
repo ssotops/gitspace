@@ -14,4 +14,4 @@ cd ../../..
 
 echo "Build complete!"
 echo "Gitspace executable: ./gitspace"
-echo "Plugins directory: ./plugins"
+echo "Plugins directory: ~/.ssot/gitspace/plugins"
