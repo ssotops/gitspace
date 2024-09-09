@@ -8,11 +8,6 @@ owner = "ssotops"
 type = "ssh"
 key_path = "$SSH_KEY_PATH"
 
-[groups.plugins-and-templates]
-match = "includes"
-values = ["plugin", "template"]
-type = "helper"
-
 [groups.git]
 match = "startsWith"
 values = ["git"]
