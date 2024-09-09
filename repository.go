@@ -446,9 +446,11 @@ func syncRepositories(logger *log.Logger, config *Config) {
 func getRepoType(config *Config, repo string) string {
 	for _, group := range config.Groups {
 		if matchesFilter(repo, group) && group.Type != "" {
+			fmt.Printf("DEBUG: Matched repo '%s' to type '%s'\n", repo, group.Type)
 			return group.Type
 		}
 	}
+	fmt.Printf("DEBUG: No specific type found for repo '%s', using default\n", repo)
 	return "default"
 }
 
@@ -458,25 +460,34 @@ func getRepoLabels(config *Config, repo string) []string {
 
 	for _, group := range config.Groups {
 		if matchesFilter(repo, group) {
+			fmt.Printf("DEBUG: Adding labels %v for repo '%s' from group %+v\n", group.Labels, repo, group)
 			labels = append(labels, group.Labels...)
 		}
 	}
 
+	fmt.Printf("DEBUG: Final labels for repo '%s': %v\n", repo, labels)
 	return removeDuplicates(labels)
 }
 
 func filterRepositories(repos []string, config *Config) []string {
 	var filtered []string
 
+	fmt.Printf("DEBUG: Filtering %d repositories\n", len(repos))
+	fmt.Printf("DEBUG: Config: %+v\n", config)
+
 	for _, repo := range repos {
-		for _, group := range config.Groups {
+		fmt.Printf("DEBUG: Checking repo: %s\n", repo)
+		for groupName, group := range config.Groups {
+			fmt.Printf("DEBUG: Against group '%s': %+v\n", groupName, group)
 			if matchesFilter(repo, group) {
+				fmt.Printf("DEBUG: MATCH - Adding repo '%s' to filtered list\n", repo)
 				filtered = append(filtered, repo)
 				break
 			}
 		}
 	}
 
+	fmt.Printf("DEBUG: Filtered repositories: %v\n", filtered)
 	return filtered
 }
 
@@ -511,31 +522,46 @@ func matchesGroup(repo string, group Group) bool {
 }
 
 func matchesFilter(repo string, group Group) bool {
+	fmt.Printf("DEBUG: Matching repo '%s' against group: %+v\n", repo, group)
 	switch group.Match {
+	case "endsWith":
+		for _, value := range group.Values {
+			fmt.Printf("DEBUG: Checking if '%s' ends with '%s'\n", repo, value)
+			repoLower := strings.ToLower(repo)
+			valueLower := strings.ToLower(value)
+			if strings.HasSuffix(repoLower, valueLower) {
+				fmt.Printf("DEBUG: MATCH FOUND - repo '%s' ends with '%s'\n", repo, value)
+				return true
+			}
+			// Check if the repo name ends with the value followed by a hyphen and any characters
+			if strings.HasSuffix(repoLower, valueLower+"-") || strings.Contains(repoLower, valueLower+"-") {
+				fmt.Printf("DEBUG: MATCH FOUND - repo '%s' contains '%s-'\n", repo, value)
+				return true
+			}
+			fmt.Printf("DEBUG: NO MATCH - repo '%s' does not end with or contain '%s-'\n", repo, value)
+		}
 	case "startsWith":
 		for _, value := range group.Values {
 			if strings.HasPrefix(strings.ToLower(repo), strings.ToLower(value)) {
-				return true
-			}
-		}
-	case "endsWith":
-		for _, value := range group.Values {
-			if strings.HasSuffix(strings.ToLower(repo), strings.ToLower(value)) {
+				fmt.Printf("DEBUG: MATCH FOUND - repo '%s' starts with '%s'\n", repo, value)
 				return true
 			}
 		}
 	case "includes":
 		for _, value := range group.Values {
 			if strings.Contains(strings.ToLower(repo), strings.ToLower(value)) {
+				fmt.Printf("DEBUG: MATCH FOUND - repo '%s' includes '%s'\n", repo, value)
 				return true
 			}
 		}
 	case "isExactly":
 		for _, value := range group.Values {
 			if strings.EqualFold(repo, value) {
+				fmt.Printf("DEBUG: MATCH FOUND - repo '%s' is exactly '%s'\n", repo, value)
 				return true
 			}
 		}
 	}
+	fmt.Printf("DEBUG: No match found for repo '%s'\n", repo)
 	return false
 }

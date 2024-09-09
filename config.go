@@ -20,12 +20,10 @@ type Config struct {
 		Owner                  string   `toml:"owner"`
 		EmptyRepoInitialBranch string   `toml:"empty_repo_initial_branch"`
 	} `toml:"global"`
-
 	Auth struct {
 		Type    string `toml:"type"`
 		KeyPath string `toml:"key_path"`
 	} `toml:"auth"`
-
 	Groups map[string]Group `toml:"groups"`
 }
 
