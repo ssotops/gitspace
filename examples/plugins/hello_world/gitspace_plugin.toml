@@ -5,20 +5,5 @@ description = "A simple Hello World plugin for Gitspace"
 author = "Gitspace Team"
 
 [[plugin.sources]]
-path = "hello_world"
+path = "hello_world.go"
 entry_point = "Plugin"
-
-# [plugin.sources.repository]
-# type = "github"
-# url = "https://github.com/ssotops/gitspace-hello-world-plugin"
-# branch = "master"
-
-# You can add more plugin sources like this:
-# [[plugin.sources]]
-# path = "another_plugin"
-# entry_point = "AnotherPlugin"
-# 
-# [plugin.sources.repository]
-# type = "gitlab"
-# url = "https://gitlab.com/ssotops/another-gitspace-plugin"
-# branch = "main"

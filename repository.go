@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-  "time"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/go-git/go-git/v5"
@@ -147,14 +147,21 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 }
 
 func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKeyPath, initialBranch string, logger *log.Logger) error {
-	repoURL := fmt.Sprintf("git@%s:%s/%s.git", scm, owner, repo)
+	repoURL := fmt.Sprintf("https://%s/%s/%s.git", scm, owner, repo)
 
-	// First, try to clone normally
-	_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
+	cloneOptions := &git.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stdout,
-		Auth:     sshAuth,
-	})
+	}
+
+	if sshAuth != nil {
+		repoURL = fmt.Sprintf("git@%s:%s/%s.git", scm, owner, repo)
+		cloneOptions.URL = repoURL
+		cloneOptions.Auth = sshAuth
+	}
+
+	// First, try to clone normally
+	_, err := git.PlainClone(repoPath, false, cloneOptions)
 
 	if err != nil {
 		if strings.Contains(err.Error(), "remote repository is empty") {

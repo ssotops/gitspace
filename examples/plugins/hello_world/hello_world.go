@@ -6,18 +6,18 @@ import (
 
 type HelloWorldPlugin struct{}
 
-func (h HelloWorldPlugin) Run() error {
+func (p *HelloWorldPlugin) Run() error {
 	fmt.Println("Hello, World!")
 	return nil
 }
 
-func (h HelloWorldPlugin) Name() string {
+func (p *HelloWorldPlugin) Name() string {
 	return "hello_world"
 }
 
-func (h HelloWorldPlugin) Version() string {
+func (p *HelloWorldPlugin) Version() string {
 	return "1.0.0"
 }
 
-// Export the plugin
+// This is the symbol that will be looked up by the plugin system
 var Plugin HelloWorldPlugin

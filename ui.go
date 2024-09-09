@@ -458,11 +458,36 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 
 		switch subChoice {
 		case "install":
-			source, err := getPathWithCompletion("Enter the plugin source (directory or .toml file)")
+			var installChoice string
+			err := huh.NewSelect[string]().
+				Title("Choose installation type").
+				Options(
+					huh.NewOption("Local", "local"),
+					huh.NewOption("Remote", "remote"),
+				).
+				Value(&installChoice).
+				Run()
+
+			if err != nil {
+				logger.Error("Error getting installation type", "error", err)
+				continue
+			}
+
+			var source string
+			if installChoice == "local" {
+				source, err = getPathWithCompletion("Enter the local plugin source (directory or .toml file)")
+			} else {
+				err = huh.NewInput().
+					Title("Enter the remote plugin URL").
+					Value(&source).
+					Run()
+			}
+
 			if err != nil {
 				logger.Error("Error getting plugin source", "error", err)
 				continue
 			}
+
 			err = installPlugin(logger, source)
 			if err != nil {
 				logger.Error("Failed to install plugin", "error", err)
