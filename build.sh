@@ -64,12 +64,12 @@ CGO_ENABLED=1 go build -buildmode=plugin -o hello-world.so .
 cd ../../..
 
 # Build templater plugin
-gum spin --spinner dot --title "Building templater plugin..." -- sleep 2
-cd examples/plugins/templater
-go mod edit -replace=github.com/ssotops/gitspace=../../../
-go mod tidy
-CGO_ENABLED=1 go build -buildmode=plugin -o templater.so .
-cd ../../..
+# gum spin --spinner dot --title "Building templater plugin..." -- sleep 2
+# cd examples/plugins/templater
+# go mod edit -replace=github.com/ssotops/gitspace=../../../
+# go mod tidy
+# CGO_ENABLED=1 go build -buildmode=plugin -o templater.so .
+# cd ../../..
 
 gum style \
     --foreground 212 --border-foreground 212 --border normal \
