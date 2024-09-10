@@ -99,7 +99,7 @@ else
 fi
 
 # Print installed plugins
-echo "Installed plugins:"
+echo "Currently installed plugins:"
 for plugin in ~/.ssot/gitspace/plugins/*.so; do
     if [ -f "$plugin" ]; then
         plugin_name=$(basename "$plugin" .so)
@@ -109,3 +109,12 @@ for plugin in ~/.ssot/gitspace/plugins/*.so; do
             "🔌 $plugin_name"
     fi
 done
+
+# Print tree structure of plugins directory
+tree_output=$(tree -L 2 ~/.ssot/gitspace/plugins)
+gum style \
+    --foreground 226 --border-foreground 226 --border double \
+    --align left --width 70 --margin "1 2" --padding "1 2" \
+    "Plugins Directory Structure:
+
+$tree_output"
