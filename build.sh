@@ -97,3 +97,15 @@ else
         --align center --width 70 --margin "1 2" --padding "1 2" \
         "Plugins were not copied to the plugins directory."
 fi
+
+# Print installed plugins
+echo "Installed plugins:"
+for plugin in ~/.ssot/gitspace/plugins/*.so; do
+    if [ -f "$plugin" ]; then
+        plugin_name=$(basename "$plugin" .so)
+        gum style \
+            --foreground 39 --border-foreground 39 --border normal \
+            --align left --width 50 --margin "0 2" --padding "0 1" \
+            "🔌 $plugin_name"
+    fi
+done

@@ -3,16 +3,17 @@
 package lib
 
 import (
-  "encoding/json"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
-  "net/http"
 	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/google/go-github/v39/github"
+	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/oauth2"
 )
 
@@ -21,6 +22,41 @@ type GitHubRelease struct {
 	TagName     string    `json:"tag_name"`
 	PublishedAt time.Time `json:"published_at"`
 	Body        string    `json:"body"`
+}
+
+// GitspaceCatalog represents the structure of the gitspace-catalog.toml file
+type GitspaceCatalog struct {
+	Catalog struct {
+		Name        string `toml:"name"`
+		Description string `toml:"description"`
+		Version     string `toml:"version"`
+		LastUpdated struct {
+			Date       string `toml:"date"`
+			CommitHash string `toml:"commit_hash"`
+		} `toml:"last_updated"`
+	} `toml:"catalog"`
+	Plugins   map[string]Plugin   `toml:"plugins"`
+	Templates map[string]Template `toml:"templates"`
+}
+
+type Plugin struct {
+	Version     string `toml:"version"`
+	Description string `toml:"description"`
+	Path        string `toml:"path"`
+	Repository  struct {
+		Type string `toml:"type"`
+		URL  string `toml:"url"`
+	} `toml:"repository"`
+}
+
+type Template struct {
+	Version     string `toml:"version,omitempty"`
+	Description string `toml:"description,omitempty"`
+	Path        string `toml:"path"`
+	Repository  struct {
+		Type string `toml:"type"`
+		URL  string `toml:"url"`
+	} `toml:"repository"`
 }
 
 // GetLatestGitHubRelease fetches the latest release information from GitHub
@@ -137,4 +173,38 @@ func AddLabelsToRepository(owner, repo string, labels []string) error {
 	}
 
 	return nil
+}
+
+// FetchGitspaceCatalog fetches the gitspace-catalog.toml file from the specified repository
+func FetchGitspaceCatalog(owner, repo string) (*GitspaceCatalog, error) {
+	ctx := context.Background()
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return nil, fmt.Errorf("GITHUB_TOKEN environment variable not set")
+	}
+
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	client := github.NewClient(tc)
+
+	fileContent, _, _, err := client.Repositories.GetContents(ctx, owner, repo, "gitspace-catalog.toml", nil)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching gitspace-catalog.toml: %v", err)
+	}
+
+	content, err := fileContent.GetContent()
+	if err != nil {
+		return nil, fmt.Errorf("error decoding file content: %v", err)
+	}
+
+	var catalog GitspaceCatalog
+	err = toml.Unmarshal([]byte(content), &catalog)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding TOML: %v", err)
+	}
+
+	return &catalog, nil
 }

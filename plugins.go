@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/ssotspace/gitspace/lib"
 )
 
 type PluginManifest struct {
@@ -63,12 +64,17 @@ func installPlugin(logger *log.Logger, source string) error {
 	logger.Debug("Plugins directory", "path", pluginsDir)
 
 	isRemote := strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://")
-	logger.Debug("Source type", "isRemote", isRemote)
+	isCatalog := strings.HasPrefix(source, "catalog://")
+	logger.Debug("Source type", "isRemote", isRemote, "isCatalog", isCatalog)
 
 	var manifestPath string
 	var sourceDir string
 
-	if isRemote {
+	if isCatalog {
+		// Handle Gitspace Catalog installation
+		catalogItem := strings.TrimPrefix(source, "catalog://")
+		return installFromGitspaceCatalog(logger, catalogItem)
+	} else if isRemote {
 		// Handle remote installation
 		tempDir, err := os.MkdirTemp("", "gitspace-plugin-*")
 		if err != nil {
@@ -180,95 +186,28 @@ func installPlugin(logger *log.Logger, source string) error {
 	return nil
 }
 
-func installPluginFromDirectory(logger *log.Logger, sourceDir, pluginsDir string) error {
-	// Find the .toml file in the source directory
-	var manifestPath string
-	err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && filepath.Ext(path) == ".toml" {
-			manifestPath = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
+func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
+	owner := "ssotops"
+	repo := "gitspace-catalog"
+	catalog, err := lib.FetchGitspaceCatalog(owner, repo)
 	if err != nil {
-		return fmt.Errorf("failed to find manifest file: %w", err)
-	}
-	if manifestPath == "" {
-		return fmt.Errorf("no .toml manifest file found in the directory")
+		return fmt.Errorf("failed to fetch Gitspace Catalog: %w", err)
 	}
 
-	// Install using the found manifest file
-	return installPluginFromManifest(logger, manifestPath, pluginsDir)
-}
-
-func installPluginFromManifest(logger *log.Logger, manifestPath, pluginsDir string) error {
-	logger.Debug("Starting plugin installation", "manifestPath", manifestPath, "pluginsDir", pluginsDir)
-
-	manifest, err := loadPluginManifest(manifestPath)
-	if err != nil {
-		return fmt.Errorf("failed to load manifest: %w", err)
-	}
-	logger.Debug("Loaded plugin manifest", "name", manifest.Plugin.Name)
-
-	// Create a directory for the plugin in the plugins directory
-	pluginDir := filepath.Join(pluginsDir, manifest.Plugin.Name)
-	logger.Debug("Preparing plugin directory", "path", pluginDir)
-
-	// Check if pluginDir already exists
-	if fileInfo, err := os.Stat(pluginDir); err == nil {
-		if fileInfo.IsDir() {
-			logger.Warn("Plugin directory already exists, removing it", "path", pluginDir)
-			if err := os.RemoveAll(pluginDir); err != nil {
-				return fmt.Errorf("failed to remove existing plugin directory: %w", err)
-			}
-		} else {
-			logger.Warn("A file exists with the same name as the plugin directory, removing it", "path", pluginDir)
-			if err := os.Remove(pluginDir); err != nil {
-				return fmt.Errorf("failed to remove existing file: %w", err)
-			}
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("error checking plugin directory: %w", err)
+	var itemURL string
+	if plugin, ok := catalog.Plugins[catalogItem]; ok {
+		itemURL = plugin.Repository.URL
+	} else if template, ok := catalog.Templates[catalogItem]; ok {
+		itemURL = template.Repository.URL
+	} else {
+		return fmt.Errorf("item %s not found in Gitspace Catalog", catalogItem)
 	}
 
-	logger.Debug("Creating plugin directory", "path", pluginDir)
-	if err := os.MkdirAll(pluginDir, 0755); err != nil {
-		return fmt.Errorf("failed to create plugin directory: %w", err)
+	if itemURL == "" {
+		return fmt.Errorf("no URL found for item %s in Gitspace Catalog", catalogItem)
 	}
 
-	// Copy the manifest file
-	destManifestPath := filepath.Join(pluginDir, filepath.Base(manifestPath))
-	logger.Debug("Copying manifest file", "from", manifestPath, "to", destManifestPath)
-	if err := copyFile(manifestPath, destManifestPath); err != nil {
-		return fmt.Errorf("failed to copy manifest file: %w", err)
-	}
-
-	// Copy the plugin source files
-	sourceDir := filepath.Dir(manifestPath)
-	logger.Debug("Copying plugin source files", "from", sourceDir, "to", pluginDir)
-	err = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && filepath.Ext(path) != ".toml" {
-			relPath, _ := filepath.Rel(sourceDir, path)
-			destPath := filepath.Join(pluginDir, relPath)
-			logger.Debug("Copying file", "from", path, "to", destPath)
-			if err := copyFile(path, destPath); err != nil {
-				return fmt.Errorf("failed to copy file %s: %w", relPath, err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to copy plugin files: %w", err)
-	}
-
-	logger.Info("Plugin installed successfully", "name", manifest.Plugin.Name, "path", pluginDir)
-	return nil
+	return installPlugin(logger, itemURL)
 }
 
 func loadPluginManifest(path string) (*PluginManifest, error) {
@@ -338,12 +277,6 @@ func printInstalledPlugins(logger *log.Logger) error {
 	}
 
 	return nil
-}
-
-func loadPlugin(path string) (GitspacePlugin, error) {
-	// This is a placeholder implementation. You'll need to implement
-	// the actual plugin loading logic based on your plugin system.
-	return nil, fmt.Errorf("plugin loading not implemented")
 }
 
 func runPlugin(logger *log.Logger) error {
@@ -511,4 +444,8 @@ func gitClone(url, destPath string) error {
 		return fmt.Errorf("git clone failed: %w\nOutput: %s", err, output)
 	}
 	return nil
+}
+
+func fetchGitspaceCatalog(owner, repo string) (*lib.GitspaceCatalog, error) {
+	return lib.FetchGitspaceCatalog(owner, repo)
 }
