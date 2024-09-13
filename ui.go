@@ -525,15 +525,16 @@ func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
 
 	var options []huh.Option[string]
 	for name := range catalog.Plugins {
-		options = append(options, huh.NewOption(name, name))
+		options = append(options, huh.NewOption(name, "catalog://"+name))
 	}
-	for name := range catalog.Templates {
-		options = append(options, huh.NewOption(name, name))
+
+	if len(options) == 0 {
+		return "", fmt.Errorf("no plugins found in the catalog")
 	}
 
 	var selectedItem string
 	err = huh.NewSelect[string]().
-		Title("Select a plugin or template to install").
+		Title("Select a plugin to install").
 		Options(options...).
 		Value(&selectedItem).
 		Run()
@@ -542,8 +543,6 @@ func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
 		return "", fmt.Errorf("failed to select item: %w", err)
 	}
 
-	// Here you would typically return a URL or path to the selected item
-	// For this example, we'll just return the name
 	return selectedItem, nil
 }
 

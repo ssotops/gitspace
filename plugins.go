@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,7 +90,7 @@ func installPlugin(logger *log.Logger, source string) error {
 			return fmt.Errorf("failed to clone remote repository: %w", err)
 		}
 
-		manifestPath = filepath.Join(tempDir, "gitspace_plugin.toml")
+		manifestPath = filepath.Join(tempDir, "gitspace-plugin.toml")
 		sourceDir = tempDir
 	} else {
 		// Handle local installation
@@ -104,7 +106,7 @@ func installPlugin(logger *log.Logger, source string) error {
 		}
 
 		if sourceInfo.IsDir() {
-			manifestPath = filepath.Join(absSource, "gitspace_plugin.toml")
+			manifestPath = filepath.Join(absSource, "gitspace-plugin.toml")
 			sourceDir = absSource
 		} else if filepath.Ext(absSource) == ".toml" {
 			manifestPath = absSource
@@ -136,7 +138,7 @@ func installPlugin(logger *log.Logger, source string) error {
 	}
 
 	// Copy the manifest file
-	destManifestPath := filepath.Join(pluginDir, "gitspace_plugin.toml")
+	destManifestPath := filepath.Join(pluginDir, "gitspace-plugin.toml")
 	logger.Debug("Copying manifest file", "from", manifestPath, "to", destManifestPath)
 	if err := copyFile(manifestPath, destManifestPath); err != nil {
 		return fmt.Errorf("failed to copy manifest file: %w", err)
@@ -189,25 +191,78 @@ func installPlugin(logger *log.Logger, source string) error {
 func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 	owner := "ssotops"
 	repo := "gitspace-catalog"
-	catalog, err := lib.FetchGitspaceCatalog(owner, repo)
+	defaultBranch := "master"
+	catalog, err := fetchGitspaceCatalog(owner, repo)
 	if err != nil {
 		return fmt.Errorf("failed to fetch Gitspace Catalog: %w", err)
 	}
 
-	var itemURL string
-	if plugin, ok := catalog.Plugins[catalogItem]; ok {
-		itemURL = plugin.Repository.URL
-	} else if template, ok := catalog.Templates[catalogItem]; ok {
-		itemURL = template.Repository.URL
-	} else {
-		return fmt.Errorf("item %s not found in Gitspace Catalog", catalogItem)
+	plugin, ok := catalog.Plugins[catalogItem]
+	if !ok {
+		return fmt.Errorf("plugin %s not found in Gitspace Catalog", catalogItem)
 	}
 
-	if itemURL == "" {
-		return fmt.Errorf("no URL found for item %s in Gitspace Catalog", catalogItem)
+	if plugin.Path == "" {
+		return fmt.Errorf("no path found for plugin %s in Gitspace Catalog", catalogItem)
 	}
 
-	return installPlugin(logger, itemURL)
+	// Construct the raw GitHub URL for the plugin directory
+	rawGitHubURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", owner, repo, defaultBranch, plugin.Path)
+
+	// Create a temporary directory for the plugin
+	tempDir, err := os.MkdirTemp("", "gitspace-plugin-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Download the gitspace-plugin.toml file
+	manifestURL := fmt.Sprintf("%s/gitspace-plugin.toml", rawGitHubURL)
+	manifestPath := filepath.Join(tempDir, "gitspace-plugin.toml")
+	err = downloadFile(manifestURL, manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to download gitspace-plugin.toml: %w", err)
+	}
+
+	// Parse the gitspace-plugin.toml file
+	pluginManifest, err := loadPluginManifest(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to load plugin manifest: %w", err)
+	}
+
+	// Download each source file specified in the manifest
+	for _, source := range pluginManifest.Plugin.Sources {
+		sourceURL := fmt.Sprintf("%s/%s", rawGitHubURL, source.Path)
+		sourcePath := filepath.Join(tempDir, source.Path)
+		err = downloadFile(sourceURL, sourcePath)
+		if err != nil {
+			return fmt.Errorf("failed to download source file %s: %w", source.Path, err)
+		}
+	}
+
+	// Now install the plugin from the temporary directory
+	return installPlugin(logger, tempDir)
+}
+
+func downloadFile(url string, filepath string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
 
 func loadPluginManifest(path string) (*PluginManifest, error) {
