@@ -395,8 +395,6 @@ func handleSymlinksCommand(logger *log.Logger, config *Config) {
 	}
 }
 
-// ensureConfig checks if a valid config is loaded and prompts the user if it's not.
-// It returns true if a valid config is available or newly loaded, false otherwise.
 func ensureConfig(logger *log.Logger, config **Config) bool {
 	if *config == nil || (*config).Global.Path == "" {
 		logger.Warn("No valid config loaded")
@@ -458,69 +456,121 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 
 		switch subChoice {
 		case "install":
-			var installChoice string
-			err := huh.NewSelect[string]().
-				Title("Choose installation type").
-				Options(
-					huh.NewOption("Local", "local"),
-					huh.NewOption("Remote", "remote"),
-				).
-				Value(&installChoice).
-				Run()
-
-			if err != nil {
-				logger.Error("Error getting installation type", "error", err)
-				continue
-			}
-
-			var source string
-			if installChoice == "local" {
-				source, err = getPathWithCompletion("Enter the local plugin source (directory or .toml file)")
-			} else {
-				err = huh.NewInput().
-					Title("Enter the remote plugin URL").
-					Value(&source).
-					Run()
-			}
-
-			if err != nil {
-				logger.Error("Error getting plugin source", "error", err)
-				continue
-			}
-
-			err = installPlugin(logger, source)
-			if err != nil {
-				logger.Error("Failed to install plugin", "error", err)
-			} else {
-				logger.Info("Plugin installed successfully")
-			}
+			handleInstallPlugin(logger)
 		case "uninstall":
-			pluginName, err := selectInstalledPlugin(logger, "Select a plugin to uninstall")
-			if err != nil {
-				logger.Error("Error selecting plugin to uninstall", "error", err)
-				continue
-			}
-			err = uninstallPlugin(logger, pluginName)
-			if err != nil {
-				logger.Error("Failed to uninstall plugin", "error", err)
-			} else {
-				logger.Info("Plugin uninstalled successfully", "plugin", pluginName)
-			}
+			handleUninstallPlugin(logger)
 		case "print":
-			err := printInstalledPlugins(logger)
-			if err != nil {
-				logger.Error("Failed to print installed plugins", "error", err)
-			}
+			handlePrintInstalledPlugins(logger)
 		case "run":
-			err := runPlugin(logger)
-			if err != nil {
-				logger.Error("Failed to run plugin", "error", err)
-			}
+			handleRunPlugin(logger)
 		case "back":
 			return
 		default:
 			logger.Error("Invalid plugins sub-choice")
 		}
+	}
+}
+
+func handleInstallPlugin(logger *log.Logger) {
+	var installChoice string
+	err := huh.NewSelect[string]().
+		Title("Choose installation type").
+		Options(
+			huh.NewOption("Gitspace Catalog", "catalog"),
+			huh.NewOption("Local", "local"),
+			huh.NewOption("Remote", "remote"),
+		).
+		Value(&installChoice).
+		Run()
+
+	if err != nil {
+		logger.Error("Error getting installation type", "error", err)
+		return
+	}
+
+	var source string
+	switch installChoice {
+	case "catalog":
+		source, err = handleGitspaceCatalogInstall(logger)
+	case "local":
+		source, err = getPathWithCompletion("Enter the local plugin source (directory or .toml file)")
+	case "remote":
+		err = huh.NewInput().
+			Title("Enter the remote plugin URL").
+			Value(&source).
+			Run()
+	}
+
+	if err != nil {
+		logger.Error("Error getting plugin source", "error", err)
+		return
+	}
+
+	err = installPlugin(logger, source)
+	if err != nil {
+		logger.Error("Failed to install plugin", "error", err)
+	} else {
+		logger.Info("Plugin installed successfully")
+	}
+}
+
+func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
+	owner := "ssotops"
+	repo := "gitspace-catalog"
+	catalog, err := fetchGitspaceCatalog(owner, repo)
+	if err != nil {
+		logger.Error("Failed to fetch Gitspace Catalog", "error", err)
+		return "", err
+	}
+
+	var options []huh.Option[string]
+	for name := range catalog.Plugins {
+		options = append(options, huh.NewOption(name, "catalog://"+name))
+	}
+
+	if len(options) == 0 {
+		return "", fmt.Errorf("no plugins found in the catalog")
+	}
+
+	var selectedItem string
+	err = huh.NewSelect[string]().
+		Title("Select a plugin to install").
+		Options(options...).
+		Value(&selectedItem).
+		Run()
+
+	if err != nil {
+		return "", fmt.Errorf("failed to select item: %w", err)
+	}
+
+	return selectedItem, nil
+}
+
+func handleUninstallPlugin(logger *log.Logger) {
+	pluginName, err := selectInstalledPlugin(logger, "Select a plugin to uninstall")
+	if err != nil {
+		logger.Error("Error selecting plugin to uninstall", "error", err)
+		return
+	}
+	err = uninstallPlugin(logger, pluginName)
+	if err != nil {
+		logger.Error("Failed to uninstall plugin", "error", err)
+	} else {
+		logger.Info("Plugin uninstalled successfully", "plugin", pluginName)
+	}
+}
+
+func handlePrintInstalledPlugins(logger *log.Logger) {
+	err := printInstalledPlugins(logger)
+	if err != nil {
+		logger.Error("Failed to print installed plugins", "error", err)
+	}
+}
+
+func handleRunPlugin(logger *log.Logger) {
+	err := runPlugin(logger)
+	if err != nil {
+		logger.Error("Failed to run plugin", "error", err)
 	}
 }
 
@@ -552,28 +602,3 @@ func selectInstalledPlugin(logger *log.Logger, prompt string) (string, error) {
 
 	return selectedPlugin, nil
 }
-
-// func promptForEmptyRepos(emptyRepos []string) []string {
-// 	options := []huh.Option[string]{
-// 		{Key: "none", Value: "None"},
-// 		{Key: "all", Value: "All"},
-// 	}
-// 	for _, repo := range emptyRepos {
-// 		options = append(options, huh.Option[string]{Key: repo, Value: repo})
-// 	}
-
-// 	var selected []string
-// 	huh.NewMultiSelect[string]().
-// 		Title("Select empty repositories to clone:").
-// 		Options(options...).
-// 		Value(&selected).
-// 		Run()
-
-// 	if contains(selected, "None") {
-// 		return []string{}
-// 	}
-// 	if contains(selected, "All") {
-// 		return emptyRepos
-// 	}
-// 	return selected
-// }
