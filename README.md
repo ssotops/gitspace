@@ -129,11 +129,3 @@ You can upgrade Gitspace to the latest version using the built-in upgrade functi
 
 In the `[global]` section of your `gs.toml` file, you can also set:
 - `empty_repo_initial_branch`: Specifies the initial branch name for empty repositories (default is "master").
-
-## Usage
-
-After installation, run `gitspace` in your terminal and use the interactive menu to navigate through various options for managing your repositories, symlinks, and plugins.
-
-## Support
-
-If you encounter any issues or have questions, please [open an issue](https://github.com/ssotops/gitspace/issues) on our GitHub repository.
