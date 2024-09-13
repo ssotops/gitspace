@@ -116,6 +116,24 @@ labels = ["utility"]
 - Provides a summary of cloning and symlinking operations.
 - Supports plugins for extending functionality.
 
+### Plugins
+Gitspace supports plugins to extend its functionality. You can install, uninstall, and run plugins using the built-in plugin management system.
+
+### Gitspace Catalog
+Gitspace includes a catalog feature that allows you to easily install pre-defined plugins and templates. You can browse [Gitspace Catalog](https://github.com/ssotops/gitspace-catalog).
+
+### Upgrading Gitspace
+You can upgrade Gitspace to the latest version using the built-in upgrade functionality.
+
+## Additional Configuration
+
+In the `[global]` section of your `gs.toml` file, you can also set:
+- `empty_repo_initial_branch`: Specifies the initial branch name for empty repositories (default is "master").
+
+## Usage
+
+After installation, run `gitspace` in your terminal and use the interactive menu to navigate through various options for managing your repositories, symlinks, and plugins.
+
 ## Support
 
 If you encounter any issues or have questions, please [open an issue](https://github.com/ssotops/gitspace/issues) on our GitHub repository.
