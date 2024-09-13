@@ -97,3 +97,24 @@ else
         --align center --width 70 --margin "1 2" --padding "1 2" \
         "Plugins were not copied to the plugins directory."
 fi
+
+# Print installed plugins
+echo "Currently installed plugins:"
+for plugin in ~/.ssot/gitspace/plugins/*.so; do
+    if [ -f "$plugin" ]; then
+        plugin_name=$(basename "$plugin" .so)
+        gum style \
+            --foreground 39 --border-foreground 39 --border normal \
+            --align left --width 50 --margin "0 2" --padding "0 1" \
+            "🔌 $plugin_name"
+    fi
+done
+
+# Print tree structure of plugins directory
+tree_output=$(tree -L 2 ~/.ssot/gitspace/plugins)
+gum style \
+    --foreground 226 --border-foreground 226 --border double \
+    --align left --width 70 --margin "1 2" --padding "1 2" \
+    "Plugins Directory Structure:
+
+$tree_output"
