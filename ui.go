@@ -28,18 +28,27 @@ func printWelcomeMessage() {
 	fmt.Println()
 }
 
-func showMainMenu() string {
+func showMainMenu(plugins []GitspacePlugin) string {
 	var choice string
+	options := []huh.Option[string]{
+		huh.NewOption("Repositories", "repositories"),
+		huh.NewOption("Symlinks", "symlinks"),
+		huh.NewOption("Sync Labels", "sync"),
+		huh.NewOption("Plugins", "plugins"),
+		huh.NewOption("Gitspace", "gitspace"),
+		huh.NewOption("Quit", "quit"),
+	}
+
+	// Add plugin options to the main menu
+	for _, p := range plugins {
+		if menuOption := p.GetMenuOption(); menuOption != nil {
+			options = append(options, *menuOption)
+		}
+	}
+
 	err := huh.NewSelect[string]().
 		Title("Choose an action").
-		Options(
-			huh.NewOption("Repositories", "repositories"),
-			huh.NewOption("Symlinks", "symlinks"),
-			huh.NewOption("Sync Labels", "sync"),
-			huh.NewOption("Plugins", "plugins"),
-			huh.NewOption("Gitspace", "gitspace"),
-			huh.NewOption("Quit", "quit"),
-		).
+		Options(options...).
 		Value(&choice).
 		Run()
 
@@ -55,7 +64,12 @@ func showMainMenu() string {
 }
 
 func handleMainMenu(logger *log.Logger, config **Config) bool {
-	choice := showMainMenu()
+	plugins, err := loadAllPlugins(logger)
+	if err != nil {
+		logger.Error("Failed to load plugins", "error", err)
+	}
+
+	choice := showMainMenu(plugins)
 
 	switch choice {
 	case "repositories":
@@ -76,10 +90,48 @@ func handleMainMenu(logger *log.Logger, config **Config) bool {
 		fmt.Println("\nExiting Gitspace. Goodbye!")
 		return true
 	default:
+		// Check if the choice matches a plugin
+		for _, p := range plugins {
+			if menuOption := p.GetMenuOption(); menuOption != nil && menuOption.Value == choice {
+				err := p.Run(logger)
+				if err != nil {
+					logger.Error("Failed to run plugin", "name", p.Name(), "error", err)
+				}
+				return false
+			}
+		}
 		logger.Error("Invalid choice")
 	}
 
 	return false
+}
+
+func loadAllPlugins(logger *log.Logger) ([]GitspacePlugin, error) {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	var plugins []GitspacePlugin
+
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read plugins directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			pluginPath := filepath.Join(pluginsDir, entry.Name(), entry.Name()+".so")
+			plugin, err := loadPlugin(pluginPath)
+			if err != nil {
+				logger.Warn("Failed to load plugin", "name", entry.Name(), "error", err)
+				continue
+			}
+			plugins = append(plugins, plugin)
+		}
+	}
+
+	return plugins, nil
 }
 
 func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
