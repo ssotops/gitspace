@@ -36,9 +36,10 @@ type PluginManifest struct {
 }
 
 type GitspacePlugin interface {
-	Run() error
 	Name() string
 	Version() string
+	Run(logger *log.Logger) error
+	GetMenuOption() *huh.Option[string]
 }
 
 func getPluginsDir() (string, error) {
@@ -184,9 +185,29 @@ func installPlugin(logger *log.Logger, source string) error {
 		return fmt.Errorf("failed to tidy go.mod: %w\nOutput: %s", err, output)
 	}
 
+	// After copying plugin files, build the plugin
+	err = buildPlugin(logger, pluginDir)
+	if err != nil {
+		return fmt.Errorf("failed to build plugin: %w", err)
+	}
+
 	logger.Info("Plugin installed successfully", "name", manifest.Plugin.Name, "path", pluginDir)
 	return nil
 }
+
+func buildPlugin(logger *log.Logger, pluginDir string) error {
+	cmd := exec.Command("go", "build", "-buildmode=plugin", "-o", filepath.Join(pluginDir, filepath.Base(pluginDir)+".so"), ".")
+	cmd.Dir = pluginDir
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to build plugin: %w\nOutput: %s", err, output)
+	}
+
+	return nil
+}
+
 
 func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 	owner := "ssotops"
@@ -242,6 +263,25 @@ func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 
 	// Now install the plugin from the temporary directory
 	return installPlugin(logger, tempDir)
+}
+
+func loadPlugin(pluginPath string) (GitspacePlugin, error) {
+	p, err := plugin.Open(pluginPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open plugin: %w", err)
+	}
+
+	symPlugin, err := p.Lookup("Plugin")
+	if err != nil {
+		return nil, fmt.Errorf("plugin does not have a Plugin symbol: %w", err)
+	}
+
+	plugin, ok := symPlugin.(GitspacePlugin)
+	if !ok {
+		return nil, fmt.Errorf("plugin does not implement GitspacePlugin interface")
+	}
+
+	return plugin, nil
 }
 
 func downloadFile(url string, filepath string) error {
@@ -361,8 +401,18 @@ func runPlugin(logger *log.Logger) error {
 		return fmt.Errorf("failed to select plugin: %w", err)
 	}
 
-	pluginDir := filepath.Join(pluginsDir, selectedPlugin)
-	return compileAndRunPlugin(logger, pluginDir, selectedPlugin)
+	pluginPath := filepath.Join(pluginsDir, selectedPlugin, selectedPlugin+".so")
+	return runPluginFromPath(logger, pluginPath)
+}
+
+func runPluginFromPath(logger *log.Logger, pluginPath string) error {
+	plugin, err := loadPlugin(pluginPath)
+	if err != nil {
+		return fmt.Errorf("failed to load plugin: %w", err)
+	}
+
+	logger.Info("Running plugin", "name", plugin.Name(), "version", plugin.Version())
+	return plugin.Run(logger)
 }
 
 func listInstalledPlugins(pluginsDir string) ([]huh.Option[string], error) {
@@ -450,7 +500,7 @@ func compileAndRunPlugin(logger *log.Logger, pluginDir, pluginName string) error
 	}
 
 	logger.Info("Running plugin", "name", pluginName)
-	return plugin.Run()
+	return plugin.Run(logger)
 }
 
 func ensureGoMod(pluginDir, pluginName string) error {
