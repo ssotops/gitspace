@@ -52,8 +52,20 @@ gum style \
     --align center --width 70 --margin "1 2" --padding "1 2" \
     "Gitspace Version Updater"
 
-# Run the update_versions tool
-gum spin --spinner dot --title "Updating versions..." -- go run cmd/update_versions/main.go
+# Run the update_versions tool with error handling
+gum style --foreground 39 --align left "Running update_versions tool..."
+output=$(go run cmd/update_versions.go 2>&1)
+exit_code=$?
+
+echo "$output"
+
+if [ $exit_code -ne 0 ]; then
+    gum style \
+        --foreground 196 --border-foreground 196 --border normal \
+        --align center --width 70 --margin "1 2" --padding "1 2" \
+        "Error: Failed to run update_versions tool. Check the error message above."
+    exit 1
+fi
 
 # Function to update a single plugin
 update_plugin() {
@@ -71,28 +83,45 @@ update_plugin() {
     gum spin --spinner dot --title "Updating go.mod..." -- go mod tidy
     
     # Rebuild plugin
-    gum spin --spinner dot --title "Rebuilding plugin..." -- go build -buildmode=plugin -o "${plugin_name}.so" .
+    if ! go build -buildmode=plugin -o "${plugin_name}.so" .; then
+        gum style \
+            --foreground 196 --border-foreground 196 --border normal \
+            --align center --width 70 --margin "1 2" --padding "1 2" \
+            "Error: Failed to rebuild plugin $plugin_name. Check the error message above."
+        return 1
+    fi
     
     cd - > /dev/null
 }
 
 # Update all plugins in examples/plugins directory
 plugins_dir="examples/plugins"
+updated_plugins=()
+failed_plugins=()
+
 for plugin_dir in "$plugins_dir"/*; do
     if [ -d "$plugin_dir" ]; then
-        update_plugin "$plugin_dir"
+        if update_plugin "$plugin_dir"; then
+            updated_plugins+=("$(basename "$plugin_dir")")
+        else
+            failed_plugins+=("$(basename "$plugin_dir")")
+        fi
     fi
 done
 
 # Print summary
-gum style \
-    --foreground 82 --border-foreground 82 --border normal \
-    --align center --width 70 --margin "1 2" --padding "1 2" \
-    "Version update complete!
-All local plugins in $plugins_dir have been updated."
+if [ ${#updated_plugins[@]} -gt 0 ]; then
+    gum style \
+        --foreground 82 --border-foreground 82 --border normal \
+        --align left --width 70 --margin "1 2" --padding "1 2" \
+        "Successfully updated plugins:
+$(printf " - %s\n" "${updated_plugins[@]}")"
+fi
 
-# Inform about potential updates to gitspace-catalog
-gum style \
-    --foreground 214 --border-foreground 214 --border normal \
-    --align center --width 70 --margin "1 2" --padding "1 2" \
-    "Note: If there were version updates, a new branch may have been created in the gitspace-catalog repository for remote plugins. Please check and create a pull request if necessary."
+if [ ${#failed_plugins[@]} -gt 0 ]; then
+    gum style \
+        --foreground 196 --border-foreground 196 --border normal \
+        --align left --width 70 --margin "1 2" --padding "1 2" \
+        "Failed to update plugins:
+$(printf " - %s\n" "${failed_plugins[@]}")"
+fi

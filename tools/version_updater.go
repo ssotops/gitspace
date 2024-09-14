@@ -1,44 +1,43 @@
-// tools/version_updater.go
 package tools
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
-  "time"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
 func UpdateVersions() error {
-	// Update main Gitspace go.mod
+	fmt.Println("Updating main Gitspace go.mod...")
 	if err := updateGoMod("go.mod"); err != nil {
-		return err
+		return fmt.Errorf("failed to update main go.mod: %w", err)
 	}
 
-	// Update local plugins
+	fmt.Println("Updating local plugins...")
 	if err := updateLocalPlugins("./examples/plugins"); err != nil {
-		return err
+		return fmt.Errorf("failed to update local plugins: %w", err)
 	}
 
-	// Update catalog plugins
+	fmt.Println("Updating catalog plugins...")
 	return updateCatalogPlugins()
 }
 
 func updateLocalPlugins(pluginsDir string) error {
-	entries, err := os.ReadDir(pluginsDir)
+	plugins, err := os.ReadDir(pluginsDir)
 	if err != nil {
 		return fmt.Errorf("error reading local plugins directory: %w", err)
 	}
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			pluginGoMod := filepath.Join(pluginsDir, entry.Name(), "go.mod")
+	for _, plugin := range plugins {
+		if plugin.IsDir() {
+			pluginGoMod := filepath.Join(pluginsDir, plugin.Name(), "go.mod")
+			fmt.Printf("Updating %s...\n", pluginGoMod)
 			if err := updateGoMod(pluginGoMod); err != nil {
-				return err
+				return fmt.Errorf("failed to update %s: %w", pluginGoMod, err)
 			}
 		}
 	}
@@ -46,12 +45,14 @@ func updateLocalPlugins(pluginsDir string) error {
 }
 
 func updateCatalogPlugins() error {
+	fmt.Println("Creating temporary directory for gitspace-catalog...")
 	tempDir, err := os.MkdirTemp("", "gitspace-catalog")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
+	fmt.Println("Cloning gitspace-catalog repository...")
 	_, err = git.PlainClone(tempDir, false, &git.CloneOptions{
 		URL: "https://github.com/ssotops/gitspace-catalog.git",
 	})
@@ -60,7 +61,7 @@ func updateCatalogPlugins() error {
 	}
 
 	pluginsDir := filepath.Join(tempDir, "plugins")
-	plugins, err := ioutil.ReadDir(pluginsDir)
+	plugins, err := os.ReadDir(pluginsDir)
 	if err != nil {
 		return fmt.Errorf("error reading catalog plugins directory: %w", err)
 	}
@@ -68,13 +69,14 @@ func updateCatalogPlugins() error {
 	for _, plugin := range plugins {
 		if plugin.IsDir() {
 			pluginGoMod := filepath.Join(pluginsDir, plugin.Name(), "go.mod")
+			fmt.Printf("Updating %s...\n", pluginGoMod)
 			if err := updateGoMod(pluginGoMod); err != nil {
-				return err
+				return fmt.Errorf("failed to update %s: %w", pluginGoMod, err)
 			}
 		}
 	}
 
-	// Create a new branch
+	fmt.Println("Opening git repository...")
 	r, err := git.PlainOpen(tempDir)
 	if err != nil {
 		return fmt.Errorf("failed to open git repo: %w", err)
@@ -85,6 +87,18 @@ func updateCatalogPlugins() error {
 		return fmt.Errorf("failed to get worktree: %w", err)
 	}
 
+	fmt.Println("Checking for changes...")
+	status, err := w.Status()
+	if err != nil {
+		return fmt.Errorf("failed to get worktree status: %w", err)
+	}
+
+	if status.IsClean() {
+		fmt.Println("No changes to commit in gitspace-catalog")
+		return nil
+	}
+
+	fmt.Println("Creating new branch...")
 	branchName := fmt.Sprintf("update-versions-%d", time.Now().Unix())
 	err = w.Checkout(&git.CheckoutOptions{
 		Create: true,
@@ -94,7 +108,7 @@ func updateCatalogPlugins() error {
 		return fmt.Errorf("failed to create new branch: %w", err)
 	}
 
-	// Commit changes
+	fmt.Println("Committing changes...")
 	_, err = w.Add(".")
 	if err != nil {
 		return fmt.Errorf("failed to stage changes: %w", err)
@@ -105,7 +119,7 @@ func updateCatalogPlugins() error {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
-	// Push changes
+	fmt.Println("Pushing changes...")
 	err = r.Push(&git.PushOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to push changes: %w", err)
