@@ -70,4 +70,8 @@ require (
 
 exclude github.com/ssotops/gitspace/examples/plugins v0.0.0
 
-replace github.com/ssotops/gitspace/gsplugin => ./gsplugin
+replace (
+	github.com/ssotops/gitspace/gsplugin => ./gsplugin
+	github.com/ssotops/gitspace/lib => ./lib
+	github.com/ssotops/gitspace/tools => ./tools
+)
