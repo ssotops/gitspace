@@ -1,4 +1,4 @@
-package plugininterface
+package plugin
 
 import (
 	"github.com/charmbracelet/huh"

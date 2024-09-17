@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/ssotops/gitspace/lib"
-	"github.com/ssotops/gitspace/plugininterface"
+	"github.com/ssotops/gitspace/plugin"
 )
 
 type PluginManifest struct {
@@ -36,8 +36,8 @@ type PluginManifest struct {
 	} `toml:"plugin"`
 }
 
-type GitspacePlugin = plugininterface.GitspacePlugin
-type PluginConfig = plugininterface.PluginConfig
+type GitspacePlugin = plugin.GitspacePlugin
+type PluginConfig = plugin.PluginConfig
 
 func getPluginsDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -261,7 +261,7 @@ func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 	return installPlugin(logger, tempDir)
 }
 
-func loadPlugin(pluginPath string) (plugininterface.GitspacePlugin, error) {
+func loadPlugin(pluginPath string) (plugin.GitspacePlugin, error) {
 	p, err := plugin.Open(pluginPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open plugin: %w", err)
@@ -440,16 +440,61 @@ func listInstalledPlugins(pluginsDir string) ([]huh.Option[string], error) {
 	return options, nil
 }
 
+func updatePluginGoMod(logger *log.Logger, pluginDir, pluginName string) error {
+	goModContent := fmt.Sprintf(`module github.com/ssotops/gitspace/plugins/%s
+
+go 1.23.0
+
+require (
+	github.com/charmbracelet/huh latest
+	github.com/charmbracelet/log latest
+	github.com/ssotops/gitspace latest
+)
+
+replace github.com/ssotops/gitspace => ../../../
+`, pluginName)
+
+	goModPath := filepath.Join(pluginDir, "go.mod")
+	err := os.WriteFile(goModPath, []byte(goModContent), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write go.mod file: %w", err)
+	}
+
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = pluginDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Error("Failed to tidy plugin module", "output", string(output), "error", err)
+		return fmt.Errorf("failed to tidy plugin module: %w", err)
+	}
+
+	logger.Debug("Updated and tidied plugin go.mod", "output", string(output))
+	return nil
+}
+
 func compileAndRunPlugin(logger *log.Logger, pluginDir, pluginName string) error {
 	logger.Debug("Starting compileAndRunPlugin", "pluginDir", pluginDir, "pluginName", pluginName)
 
 	// Compile the plugin
-	if err := compilePlugin(logger, pluginDir, pluginName); err != nil {
-		return fmt.Errorf("failed to compile plugin: %w", err)
+	pluginFile := filepath.Join(pluginDir, pluginName+".so")
+	buildCmd := exec.Command("go", "build", "-buildmode=plugin", "-o", pluginFile)
+	buildCmd.Dir = pluginDir
+	buildCmd.Env = append(os.Environ(),
+		"CGO_ENABLED=1",
+		fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
+		fmt.Sprintf("GOOS=%s", runtime.GOOS),
+		"GO111MODULE=on",
+	)
+
+	output, err := buildCmd.CombinedOutput()
+	if err != nil {
+		logger.Error("Plugin compilation failed", "output", string(output), "error", err)
+		return fmt.Errorf("failed to compile plugin: %w\nOutput: %s", err, output)
 	}
 
+	logger.Debug("Plugin compiled successfully", "output", string(output))
+
 	// Load and run the plugin
-	pluginFile := filepath.Join(pluginDir, pluginName+".so")
 	logger.Debug("Attempting to open plugin", "path", pluginFile)
 	p, err := plugin.Open(pluginFile)
 	if err != nil {
@@ -486,6 +531,7 @@ func compilePlugin(logger *log.Logger, pluginDir, pluginName string) error {
 		"CGO_ENABLED=1",
 		fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		fmt.Sprintf("GOOS=%s", runtime.GOOS),
+		"GO111MODULE=on",
 	)
 
 	output, err := buildCmd.CombinedOutput()
@@ -683,7 +729,7 @@ func testPlugin(name string, logger *log.Logger) {
 		os.Exit(1)
 	}
 
-	var targetPlugin plugininterface.GitspacePlugin
+	var targetPlugin plugin.GitspacePlugin
 	for _, p := range plugins {
 		if p.Name() == name {
 			targetPlugin = p
