@@ -37,7 +37,7 @@ jobs:
         run: |
           cd .github/scripts
           go mod init dagger-release
-          go mod edit -replace github.com/ssotspace/gitspace=../..
+          go mod edit -replace github.com/ssotops/gitspace=../..
           go get dagger.io/dagger@latest
           go mod tidy
           go run dagger-release.go

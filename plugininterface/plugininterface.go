@@ -13,16 +13,22 @@ type GitspacePlugin interface {
 	Run(logger *log.Logger) error
 	GetMenuOption() *huh.Option[string]
 	Standalone(args []string) error
+	SetConfig(config PluginConfig)
 }
 
-// PluginConfig contains the configuration for the plugin
-type PluginConfig struct {
+// PluginMetadata contains additional information about the plugin
+type PluginMetadata struct {
 	Name        string   `toml:"name"`
 	Version     string   `toml:"version"`
 	Description string   `toml:"description"`
 	Author      string   `toml:"author"`
 	Tags        []string `toml:"tags"`
-	Menu        struct {
+}
+
+// PluginConfig contains the configuration for the plugin
+type PluginConfig struct {
+	Metadata PluginMetadata `toml:"metadata"`
+	Menu     struct {
 		Title string `toml:"title"`
 		Key   string `toml:"key"`
 	} `toml:"menu"`

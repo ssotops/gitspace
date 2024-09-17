@@ -76,6 +76,18 @@ if ! go build .; then
 fi
 cd ..
 
+# Build plugininterface package
+gum spin --spinner dot --title "Building plugininterface package..." -- sleep 2
+cd plugininterface
+if ! go build .; then
+    gum style \
+        --foreground 196 --border-foreground 196 --border normal \
+        --align center --width 70 --margin "1 2" --padding "1 2" \
+        "Failed to build plugininterface package. Please check the error message above."
+    exit 1
+fi
+cd ..
+
 # Build main Gitspace application
 gum spin --spinner dot --title "Building Gitspace main application..." -- sleep 2
 CGO_ENABLED=1 go build -buildmode=pie -o gitspace .
@@ -103,26 +115,31 @@ gum style \
 Gitspace executable: ./gitspace
 Tools package: ./tools
 Cmd package: ./cmd
+Plugininterface package: ./plugininterface
 Plugins directory: ~/.ssot/gitspace/plugins"
 
-# Ask for confirmation using gum
+# Copy local plugins to the plugins directory
 if gum confirm "Do you want to copy local plugins to the plugins directory?"; then
     # Create plugins directory if it doesn't exist
     mkdir -p ~/.ssot/gitspace/plugins
 
     # Copy local plugins to the plugins directory
-    cp examples/plugins/hello-world/hello-world.so ~/.ssot/gitspace/plugins/
+    for plugin in examples/plugins/*; do
+        if [ -d "$plugin" ]; then
+            plugin_name=$(basename "$plugin")
+            mkdir -p ~/.ssot/gitspace/plugins/"$plugin_name"
+            cp "$plugin"/*.go ~/.ssot/gitspace/plugins/"$plugin_name"/
+            cp "$plugin"/gitspace-plugin.toml ~/.ssot/gitspace/plugins/"$plugin_name"/
+            if [ -f "$plugin"/*.so ]; then
+                cp "$plugin"/*.so ~/.ssot/gitspace/plugins/"$plugin_name"/
+            fi
+        fi
+    done
 
     gum style \
         --foreground 82 --border-foreground 82 --border normal \
         --align center --width 70 --margin "1 2" --padding "1 2" \
         "Local plugins copied to ~/.ssot/gitspace/plugins/"
-
-    gum style \
-        --foreground 214 --border-foreground 214 --border normal \
-        --align center --width 70 --margin "1 2" --padding "1 2" \
-        "Note: Remote plugins like 'templater' are not copied locally.
-They are managed separately through the Gitspace Catalog."
 else
     gum style \
         --foreground 208 --border-foreground 208 --border normal \

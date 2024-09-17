@@ -36,44 +36,8 @@ type PluginManifest struct {
 	} `toml:"plugin"`
 }
 
-// GitspacePlugin defines the interface that all plugins must implement
-type GitspacePlugin interface {
-	// Name returns the name of the plugin
-	Name() string
-
-	// Version returns the version of the plugin
-	Version() string
-
-	// Description returns a short description of the plugin
-	Description() string
-
-	// Run executes the plugin's main functionality
-	Run(logger *log.Logger) error
-
-	// GetMenuOption returns the menu option for the plugin
-	GetMenuOption() *huh.Option[string]
-
-	// Standalone runs the plugin in standalone mode
-	Standalone(args []string) error
-}
-
-// PluginMetadata contains additional information about the plugin
-type PluginMetadata struct {
-	Name        string   `toml:"name"`
-	Version     string   `toml:"version"`
-	Description string   `toml:"description"`
-	Author      string   `toml:"author"`
-	Tags        []string `toml:"tags"`
-}
-
-// PluginConfig contains the configuration for the plugin
-type PluginConfig struct {
-	Metadata PluginMetadata `toml:"metadata"`
-	Menu     struct {
-		Title string `toml:"title"`
-		Key   string `toml:"key"`
-	} `toml:"menu"`
-}
+type GitspacePlugin = plugininterface.GitspacePlugin
+type PluginConfig = plugininterface.PluginConfig
 
 func getPluginsDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -297,7 +261,7 @@ func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 	return installPlugin(logger, tempDir)
 }
 
-func loadPlugin(pluginPath string) (GitspacePlugin, error) {
+func loadPlugin(pluginPath string) (plugininterface.GitspacePlugin, error) {
 	p, err := plugin.Open(pluginPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open plugin: %w", err)
@@ -324,10 +288,8 @@ func loadPlugin(pluginPath string) (GitspacePlugin, error) {
 		return nil, fmt.Errorf("failed to parse plugin config: %w", err)
 	}
 
-	// Set the parsed config in the plugin if it supports it
-	if configurable, ok := plugin.(interface{ SetConfig(PluginConfig) }); ok {
-		configurable.SetConfig(config)
-	}
+	// Set the parsed config in the plugin
+	plugin.SetConfig(config)
 
 	return plugin, nil
 }
@@ -517,32 +479,8 @@ func compileAndRunPlugin(logger *log.Logger, pluginDir, pluginName string) error
 }
 
 func compilePlugin(logger *log.Logger, pluginDir, pluginName string) error {
-	// Find the main Go file
-	mainFile := ""
-	err := filepath.Walk(pluginDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".go") {
-			mainFile = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if err != nil {
-		logger.Error("Failed to find plugin source file", "error", err)
-		return fmt.Errorf("failed to find plugin source file: %w", err)
-	}
-	if mainFile == "" {
-		logger.Error("No Go source file found in plugin directory")
-		return fmt.Errorf("no Go source file found in plugin directory")
-	}
-
-	logger.Debug("Found main plugin file", "path", mainFile)
-
-	// Compile the plugin
 	pluginFile := filepath.Join(pluginDir, pluginName+".so")
-	buildCmd := exec.Command("go", "build", "-buildmode=plugin", "-o", pluginFile, mainFile)
+	buildCmd := exec.Command("go", "build", "-buildmode=plugin", "-o", pluginFile)
 	buildCmd.Dir = pluginDir
 	buildCmd.Env = append(os.Environ(),
 		"CGO_ENABLED=1",
@@ -626,10 +564,8 @@ func fetchAndInstallRemotePlugin(logger *log.Logger, pluginName string) error {
 		return fmt.Errorf("plugin %s not found in catalog", pluginName)
 	}
 
-	// Construct the URL for the plugin files
 	baseURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/master/%s/", owner, repo, pluginInfo.Path)
 
-	// Download and install the plugin files
 	pluginsDir, err := getPluginsDir()
 	if err != nil {
 		return fmt.Errorf("failed to get plugins directory: %w", err)
@@ -649,12 +585,94 @@ func fetchAndInstallRemotePlugin(logger *log.Logger, pluginName string) error {
 		}
 	}
 
+	// Initialize Go module or update existing one
+	if err := initOrUpdateGoModule(logger, pluginDir, pluginName); err != nil {
+		logger.Error("Failed to initialize or update Go module", "error", err)
+		// Continue despite the error
+	}
+
+	// Add dependencies
+	if err := addDependencies(logger, pluginDir); err != nil {
+		logger.Error("Failed to add all dependencies", "error", err)
+		// Continue despite the error
+	}
+
 	// Compile the plugin
 	if err := compilePlugin(logger, pluginDir, pluginName); err != nil {
 		return fmt.Errorf("failed to compile plugin: %w", err)
 	}
 
 	logger.Info("Successfully fetched and installed remote plugin", "name", pluginName)
+	return nil
+}
+
+func initOrUpdateGoModule(logger *log.Logger, pluginDir, pluginName string) error {
+	goModPath := filepath.Join(pluginDir, "go.mod")
+	if _, err := os.Stat(goModPath); os.IsNotExist(err) {
+		// Initialize new module
+		cmd := exec.Command("go", "mod", "init", fmt.Sprintf("github.com/ssotops/gitspace-plugins/%s", pluginName))
+		cmd.Dir = pluginDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			logger.Error("Failed to initialize Go module", "output", string(output), "error", err)
+			return fmt.Errorf("failed to initialize Go module: %w", err)
+		}
+		logger.Debug("Initialized Go module", "output", string(output))
+	} else {
+		// Update existing module
+		cmd := exec.Command("go", "get", "-u")
+		cmd.Dir = pluginDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			logger.Error("Failed to update Go module", "output", string(output), "error", err)
+			return fmt.Errorf("failed to update Go module: %w", err)
+		}
+		logger.Debug("Updated Go module", "output", string(output))
+	}
+	return nil
+}
+
+func initGoModule(logger *log.Logger, pluginDir, pluginName string) error {
+	cmd := exec.Command("go", "mod", "init", fmt.Sprintf("github.com/ssotops/gitspace-plugins/%s", pluginName))
+	cmd.Dir = pluginDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Error("Failed to initialize Go module", "output", string(output), "error", err)
+		return fmt.Errorf("failed to initialize Go module: %w", err)
+	}
+	logger.Debug("Initialized Go module", "output", string(output))
+	return nil
+}
+
+func addDependencies(logger *log.Logger, pluginDir string) error {
+	dependencies := []string{
+		"github.com/charmbracelet/huh",
+		"github.com/charmbracelet/log",
+		"github.com/ssotops/gitspace@latest",
+	}
+
+	for _, dep := range dependencies {
+		cmd := exec.Command("go", "get", dep)
+		cmd.Dir = pluginDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			logger.Error("Failed to add dependency", "dependency", dep, "output", string(output), "error", err)
+			// Continue with other dependencies instead of returning immediately
+			continue
+		}
+		logger.Debug("Added dependency", "dependency", dep, "output", string(output))
+	}
+
+	// Run go mod tidy to clean up dependencies
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = pluginDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Error("Failed to tidy module", "output", string(output), "error", err)
+		return fmt.Errorf("failed to tidy module: %w", err)
+	}
+	logger.Debug("Module tidied", "output", string(output))
+
 	return nil
 }
 
