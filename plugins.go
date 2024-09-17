@@ -1,5 +1,5 @@
-package main
 
+package main
 import (
 	"fmt"
 	"io"
@@ -15,8 +15,35 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/ssotops/gitspace/lib"
-	"github.com/ssotops/gitspace/plugin"
 )
+
+type GitspacePlugin interface {
+	Name() string
+	Version() string
+	Description() string
+	Run(logger *log.Logger) error
+	GetMenuOption() *huh.Option[string]
+	Standalone(args []string) error
+	SetConfig(config PluginConfig)
+}
+
+// PluginMetadata contains additional information about the plugin
+type PluginMetadata struct {
+	Name        string   `toml:"name"`
+	Version     string   `toml:"version"`
+	Description string   `toml:"description"`
+	Author      string   `toml:"author"`
+	Tags        []string `toml:"tags"`
+}
+
+// PluginConfig contains the configuration for the plugin
+type PluginConfig struct {
+	Metadata PluginMetadata `toml:"metadata"`
+	Menu     struct {
+		Title string `toml:"title"`
+		Key   string `toml:"key"`
+	} `toml:"menu"`
+}
 
 type PluginManifest struct {
 	Plugin struct {
@@ -35,9 +62,6 @@ type PluginManifest struct {
 		} `toml:"sources"`
 	} `toml:"plugin"`
 }
-
-type GitspacePlugin = plugin.GitspacePlugin
-type PluginConfig = plugin.PluginConfig
 
 func getPluginsDir() (string, error) {
 	homeDir, err := os.UserHomeDir()

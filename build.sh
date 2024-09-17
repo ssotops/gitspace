@@ -76,18 +76,6 @@ if ! go build .; then
 fi
 cd ..
 
-# Build plugin package
-gum spin --spinner dot --title "Building plugin package..." -- sleep 2
-cd plugin
-if ! go build .; then
-    gum style \
-        --foreground 196 --border-foreground 196 --border normal \
-        --align center --width 70 --margin "1 2" --padding "1 2" \
-        "Failed to build plugin package. Please check the error message above."
-    exit 1
-fi
-cd ..
-
 # Build main Gitspace application
 gum spin --spinner dot --title "Building Gitspace main application..." -- sleep 2
 CGO_ENABLED=1 go build -buildmode=pie -o gitspace .
@@ -115,7 +103,6 @@ gum style \
 Gitspace executable: ./gitspace
 Tools package: ./tools
 Cmd package: ./cmd
-plugin package: ./plugin
 Plugins directory: ~/.ssot/gitspace/plugins"
 
 # Copy local plugins to the plugins directory
