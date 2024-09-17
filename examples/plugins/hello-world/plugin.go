@@ -5,10 +5,12 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
-  "github.com/ssotops/gitspace/gsplugin"
+	"github.com/ssotops/gitspace/gsplugin"
 )
 
-type HelloWorldPlugin struct{}
+type HelloWorldPlugin struct {
+	config gsplugin.PluginConfig
+}
 
 var Plugin HelloWorldPlugin
 
@@ -41,6 +43,6 @@ func (p HelloWorldPlugin) Standalone(args []string) error {
 	return nil
 }
 
-func (p HelloWorldPlugin) SetConfig(config gsplugin.PluginConfig) {
-	// This plugin doesn't use any configuration, but we need to implement this method
+func (p *HelloWorldPlugin) SetConfig(config gsplugin.PluginConfig) {
+	p.config = config
 }

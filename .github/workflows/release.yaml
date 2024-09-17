@@ -28,7 +28,7 @@ jobs:
 
       - name: Build gitspace
         run: |
-          go build -o gitspace
+          go build -o gitspace ./...
           sudo mv gitspace /usr/local/bin
 
       - name: Run Dagger workflow

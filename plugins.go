@@ -1,7 +1,6 @@
-//go:build pluginload
+package main
 // +build pluginload
 
-package main
 import (
 	"fmt"
 	"io"
