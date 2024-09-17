@@ -4,7 +4,7 @@ import (
     "fmt"
     "os"
 
-    "github.com/ssotspace/gitspace/tools"
+    "github.com/ssotops/gitspace/tools"
 )
 
 func main() {

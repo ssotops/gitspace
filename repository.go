@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pelletier/go-toml/v2"
-	"github.com/ssotspace/gitspace/lib"
+	"github.com/ssotops/gitspace/lib"
 )
 
 type RepoResult struct {

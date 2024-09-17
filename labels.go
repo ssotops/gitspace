@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
-	"github.com/ssotspace/gitspace/lib"
+	"github.com/ssotops/gitspace/lib"
 )
 
 func syncLabels(logger *log.Logger, config *Config) {

@@ -1,4 +1,4 @@
-module github.com/ssotspace/gitspace
+module github.com/ssotops/gitspace
 
 go 1.23.0
 
@@ -67,4 +67,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-exclude github.com/ssotspace/gitspace/examples/plugins v0.0.0
+exclude github.com/ssotops/gitspace/examples/plugins v0.0.0
