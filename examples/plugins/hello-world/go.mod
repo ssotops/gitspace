@@ -1,13 +1,11 @@
 module github.com/ssotops/gitspace/plugins/hello_world
 
-go 1.23.0
-
-toolchain go1.23.1
+go 1.23.1
 
 require (
 	github.com/charmbracelet/huh v0.6.0
 	github.com/charmbracelet/log v0.4.0
-	github.com/ssotops/gitspace v0.0.0-00010101000000-000000000000
+	github.com/ssotops/gitspace/gsplugin v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -31,11 +29,14 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.15.3-0.20240618155329-98d742f6907a // indirect
+	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
 )
+
+replace github.com/ssotops/gitspace/gsplugin => ../../../gsplugin
 
 replace github.com/ssotops/gitspace => ../../../
