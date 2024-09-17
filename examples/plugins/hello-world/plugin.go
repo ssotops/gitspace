@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
-	"github.com/ssotops/gitspace/plugininterface"
+	"github.com/ssotops/gitspace/plugin"
 )
 
 type HelloWorldPlugin struct{}
@@ -41,6 +41,6 @@ func (p HelloWorldPlugin) Standalone(args []string) error {
 	return nil
 }
 
-func (p HelloWorldPlugin) SetConfig(config plugininterface.PluginConfig) {
+func (p HelloWorldPlugin) SetConfig(config plugin.PluginConfig) {
 	// This plugin doesn't use any configuration, but we need to implement this method
 }

@@ -76,14 +76,14 @@ if ! go build .; then
 fi
 cd ..
 
-# Build plugininterface package
-gum spin --spinner dot --title "Building plugininterface package..." -- sleep 2
-cd plugininterface
+# Build plugin package
+gum spin --spinner dot --title "Building plugin package..." -- sleep 2
+cd plugin
 if ! go build .; then
     gum style \
         --foreground 196 --border-foreground 196 --border normal \
         --align center --width 70 --margin "1 2" --padding "1 2" \
-        "Failed to build plugininterface package. Please check the error message above."
+        "Failed to build plugin package. Please check the error message above."
     exit 1
 fi
 cd ..
@@ -115,7 +115,7 @@ gum style \
 Gitspace executable: ./gitspace
 Tools package: ./tools
 Cmd package: ./cmd
-Plugininterface package: ./plugininterface
+plugin package: ./plugin
 Plugins directory: ~/.ssot/gitspace/plugins"
 
 # Copy local plugins to the plugins directory
