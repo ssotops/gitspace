@@ -1,19 +1,22 @@
 module github.com/ssotops/gitspace/plugins/hello_world
 
-go 1.23
+go 1.23.0
+
+toolchain go1.23.1
 
 require (
 	github.com/charmbracelet/huh v0.6.0
 	github.com/charmbracelet/log v0.4.0
+	github.com/ssotops/gitspace v0.0.0-00010101000000-000000000000
 )
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/catppuccin/go v0.2.0 // indirect
-	github.com/charmbracelet/bubbles v0.20.0
-	github.com/charmbracelet/bubbletea v1.1.0
-	github.com/charmbracelet/lipgloss v0.13.0
+	github.com/charmbracelet/bubbles v0.20.0 // indirect
+	github.com/charmbracelet/bubbletea v1.1.0 // indirect
+	github.com/charmbracelet/lipgloss v0.13.0 // indirect
 	github.com/charmbracelet/x/ansi v0.2.3 // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
 	github.com/charmbracelet/x/term v0.2.0 // indirect
@@ -29,7 +32,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.15.3-0.20240618155329-98d742f6907a // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
+	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect

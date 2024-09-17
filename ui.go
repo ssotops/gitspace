@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func printWelcomeMessage() {
@@ -63,13 +64,37 @@ func showMainMenu(plugins []GitspacePlugin) string {
 	return choice
 }
 
-func handleMainMenu(logger *log.Logger, config **Config) bool {
-	plugins, err := loadAllPlugins(logger)
-	if err != nil {
-		logger.Error("Failed to load plugins", "error", err)
+func handleMainMenu(logger *log.Logger, config **Config, plugins []GitspacePlugin) bool {
+	options := []huh.Option[string]{
+		huh.NewOption("Repositories", "repositories"),
+		huh.NewOption("Symlinks", "symlinks"),
+		huh.NewOption("Sync Labels", "sync"),
+		huh.NewOption("Plugins", "plugins"),
+		huh.NewOption("Gitspace", "gitspace"),
+		huh.NewOption("Quit", "quit"),
 	}
 
-	choice := showMainMenu(plugins)
+	// Add plugin options to the main menu
+	for _, p := range plugins {
+		if menuOption := p.GetMenuOption(); menuOption != nil {
+			options = append(options, *menuOption)
+		}
+	}
+
+	var choice string
+	err := huh.NewSelect[string]().
+		Title("Choose an action").
+		Options(options...).
+		Value(&choice).
+		Run()
+
+	if err != nil {
+		if err == huh.ErrUserAborted {
+			return true // Return true to quit on CTRL+C
+		}
+		logger.Error("Error getting user choice", "error", err)
+		return false
+	}
 
 	switch choice {
 	case "repositories":
@@ -83,11 +108,6 @@ func handleMainMenu(logger *log.Logger, config **Config) bool {
 	case "plugins":
 		handlePluginsCommand(logger, *config)
 	case "quit":
-		fmt.Println("Exiting Gitspace. Goodbye!")
-		return true
-	case "":
-		// User likely pressed CTRL+C, exit gracefully
-		fmt.Println("\nExiting Gitspace. Goodbye!")
 		return true
 	default:
 		// Check if the choice matches a plugin
@@ -127,7 +147,23 @@ func loadAllPlugins(logger *log.Logger) ([]GitspacePlugin, error) {
 				logger.Warn("Failed to load plugin", "name", entry.Name(), "error", err)
 				continue
 			}
+
+			// Load and parse gitspace-plugin.toml
+			configPath := filepath.Join(pluginsDir, entry.Name(), "gitspace-plugin.toml")
+			var config PluginConfig
+			configData, err := os.ReadFile(configPath)
+			if err != nil {
+				logger.Warn("Failed to read plugin config file", "name", entry.Name(), "error", err)
+			} else {
+				if err := toml.Unmarshal(configData, &config); err != nil {
+					logger.Warn("Failed to parse plugin config", "name", entry.Name(), "error", err)
+				} else if configurable, ok := plugin.(interface{ SetConfig(PluginConfig) }); ok {
+					configurable.SetConfig(config)
+				}
+			}
+
 			plugins = append(plugins, plugin)
+			logger.Info("Plugin loaded successfully", "name", plugin.Name(), "version", plugin.Version())
 		}
 	}
 

@@ -4,6 +4,6 @@ version = "1.0.0"
 description = "A simple Hello World plugin for Gitspace"
 author = "ssotops"
 
-[[plugin.sources]]
-path = "hello_world.go"
-entry_point = "Plugin"
+[menu]
+title = "Hello World"
+key = "hello-world"

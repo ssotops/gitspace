@@ -15,17 +15,17 @@ values = ["bots"]
 [groups.git]
 match = "startsWith"
 values = ["git"]
-type = "gitops"
-labels = ["backend", "core"]
+# type = "gitops"
+# labels = ["backend", "core"]
 
 [groups.space]
 match = "endsWith"
-values = ["space"]
-type = "solution"
-labels = ["frontend", "experimental"]
+values = ["space", "plugin"]
+# type = "solution"
+# labels = ["frontend", "experimental"]
 
 [groups.sso]
 match = "includes"
 values = ["sso"]
-type = "ssot"
-labels = ["auth", "security"]
+# type = "ssot"
+# labels = ["auth", "security"]
