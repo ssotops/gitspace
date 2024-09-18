@@ -18,17 +18,14 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23.0'  # Using the latest stable version
+          go-version: '1.23.0'
 
-      - name: Install Dagger
-        run: |
-          curl -L https://dl.dagger.io/dagger/install.sh | sh
-          sudo mv bin/dagger /usr/local/bin
-          dagger version
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Build gitspace
         run: |
-          go build -o gitspace ./...
+          go build -o gitspace
           sudo mv gitspace /usr/local/bin
 
       - name: Run Dagger workflow
