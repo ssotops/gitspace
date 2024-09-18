@@ -1,5 +1,4 @@
 package main
-// +build pluginload
 
 import (
 	"fmt"
