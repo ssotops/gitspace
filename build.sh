@@ -71,30 +71,6 @@ gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
     go mod tidy
 '
 
-# # Build tools package
-# gum spin --spinner dot --title "Building tools package..." -- sleep 2
-# cd tools
-# if ! go build .; then
-#     gum style \
-#         --foreground 196 --border-foreground 196 --border normal \
-#         --align center --width 70 --margin "1 2" --padding "1 2" \
-#         "Failed to build tools package. Please check the error message above."
-#     exit 1
-# fi
-# cd ..
-
-# # Build cmd package
-# gum spin --spinner dot --title "Building cmd package..." -- sleep 2
-# cd cmd
-# if ! go build .; then
-#     gum style \
-#         --foreground 196 --border-foreground 196 --border normal \
-#         --align center --width 70 --margin "1 2" --padding "1 2" \
-#         "Failed to build cmd package. Please check the error message above."
-#     exit 1
-# fi
-# cd ..
-
 # Build main Gitspace application
 gum spin --spinner dot --title "Building Gitspace main application..." -- sleep 2
 CGO_ENABLED=1 go build -tags pluginload -buildmode=pie -o gitspace .
@@ -105,36 +81,6 @@ gum style \
     "Build complete!
 Gitspace executable: ./gitspace
 Plugins directory: ~/.ssot/gitspace/plugins"
-
-# # Copy local plugins to the plugins directory
-# if gum confirm "Do you want to copy local plugins to the plugins directory?"; then
-#     # Create plugins directory if it doesn't exist
-#     mkdir -p ~/.ssot/gitspace/plugins
-
-#     # Copy local plugins to the plugins directory
-#     for plugin in examples/plugins/*; do
-#         if [ -d "$plugin" ]; then
-#             plugin_name=$(basename "$plugin")
-#             plugin_dir=~/.ssot/gitspace/plugins/"$plugin_name"
-#             mkdir -p "$plugin_dir"
-#             cp "$plugin"/*.go "$plugin_dir"/
-#             cp "$plugin"/gitspace-plugin.toml "$plugin_dir"/
-#             if [ -f "$plugin"/*.so ]; then
-#                 cp "$plugin"/*.so "$plugin_dir"/
-#             fi
-#         fi
-#     done
-
-#     gum style \
-#         --foreground 82 --border-foreground 82 --border normal \
-#         --align center --width 70 --margin "1 2" --padding "1 2" \
-#         "Local plugins copied to ~/.ssot/gitspace/plugins/"
-# else
-#     gum style \
-#         --foreground 208 --border-foreground 208 --border normal \
-#         --align center --width 70 --margin "1 2" --padding "1 2" \
-#         "Local plugins were not copied to the plugins directory."
-# fi
 
 # Print installed local plugins
 echo "Currently installed local plugins:"
