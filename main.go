@@ -28,7 +28,7 @@ func main() {
 		return
 	}
 
-	currentDeps, err := GetCurrentDependencies()
+	currentDeps, err := gitspace_plugin.GetCurrentDependencies()
 	if err != nil {
 		log.Fatal("Failed to get current dependencies:", err)
 	}
