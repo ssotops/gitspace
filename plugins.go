@@ -14,14 +14,14 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/ssotops/gitspace-plugin"
 	"github.com/ssotops/gitspace/lib"
-	"github.com/ssotops/gitspace/gsplugin"
 )
 
-// Use the types from gsplugin
-type GitspacePlugin = gsplugin.GitspacePlugin
-type PluginConfig = gsplugin.PluginConfig
-type PluginManifest = gsplugin.PluginManifest
+// Use the types from github.com/ssotops/gitspace-plugin
+type GitspacePlugin = gitspace_plugin.GitspacePlugin
+type PluginConfig = gitspace_plugin.PluginConfig
+type PluginManifest = gitspace_plugin.PluginManifest
 
 func getPluginsDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -246,36 +246,7 @@ func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 }
 
 func loadPlugin(pluginPath string) (GitspacePlugin, error) {
-	p, err := plugin.Open(pluginPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open plugin: %w", err)
-	}
-
-	symPlugin, err := p.Lookup("Plugin")
-	if err != nil {
-		return nil, fmt.Errorf("plugin does not have a Plugin symbol: %w", err)
-	}
-
-	plugin, ok := symPlugin.(GitspacePlugin)
-	if !ok {
-		return nil, fmt.Errorf("plugin does not implement GitspacePlugin interface")
-	}
-
-	// Load and parse gitspace-plugin.toml
-	configPath := filepath.Join(filepath.Dir(pluginPath), "gitspace-plugin.toml")
-	var config PluginConfig
-	configData, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read plugin config file: %w", err)
-	}
-	if err := toml.Unmarshal(configData, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse plugin config: %w", err)
-	}
-
-	// Set the parsed config in the plugin
-	plugin.SetConfig(config)
-
-	return plugin, nil
+	return gitspace_plugin.LoadPluginWithConfig(pluginPath)
 }
 
 func downloadFile(url string, filepath string) error {
@@ -396,7 +367,13 @@ func runPlugin(logger *log.Logger) error {
 	}
 
 	pluginPath := filepath.Join(pluginsDir, selectedPlugin, selectedPlugin+".so")
-	return runPluginFromPath(logger, pluginPath)
+	plugin, err := gitspace_plugin.LoadPluginWithConfig(pluginPath)
+	if err != nil {
+		return fmt.Errorf("failed to load plugin: %w", err)
+	}
+
+	logger.Info("Running plugin", "name", plugin.Name(), "version", plugin.Version())
+	return plugin.Run(logger)
 }
 
 func runPluginFromPath(logger *log.Logger, pluginPath string) error {

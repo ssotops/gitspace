@@ -76,7 +76,7 @@ gum style \
 gum spin --spinner dot --title "Building gsplugin package..." -- sleep 2
 cd gsplugin
 if [ ! -f "go.mod" ]; then
-    go mod init github.com/ssotops/gitspace/gsplugin
+    go mod init github.com/ssotops/gitspace-plugin
 fi
 go mod tidy
 if ! go build .; then
@@ -121,7 +121,7 @@ gum spin --spinner dot --title "Building hello-world plugin..." -- sleep 2
 cd examples/plugins/hello-world
 update_charm_versions .
 go mod edit -replace=github.com/ssotops/gitspace=../../../
-go mod edit -replace=github.com/ssotops/gitspace/gsplugin=../../../gsplugin
+go mod edit -replace=github.com/ssotops/gitspace-plugin=../../../gsplugin
 go mod tidy
 CGO_ENABLED=1 go build -buildmode=plugin -o hello-world.so .
 cd ../../..
@@ -131,7 +131,7 @@ cd ../../..
 # cd examples/plugins/templater
 # update_charm_versions .
 # go mod edit -replace=github.com/ssotops/gitspace=../../../
-# go mod edit -replace=github.com/ssotops/gitspace/gsplugin=../../../gsplugin
+# go mod edit -replace=github.com/ssotops/gitspace-plugin=../../../gsplugin
 # go get github.com/charmbracelet/x@$CHARM_X_VERSION
 # go mod tidy
 # CGO_ENABLED=1 go build -buildmode=plugin -o templater.so .

@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/pelletier/go-toml/v2"
-	"github.com/ssotops/gitspace/gsplugin"
+	"github.com/ssotops/gitspace-plugin"
 )
 
 func printWelcomeMessage() {
@@ -30,7 +30,7 @@ func printWelcomeMessage() {
 	fmt.Println()
 }
 
-func showMainMenu(plugins []gsplugin.GitspacePlugin) string {
+func showMainMenu(plugins []gitspace_plugin.GitspacePlugin) string {
 	var choice string
 	options := []huh.Option[string]{
 		huh.NewOption("Repositories", "repositories"),
@@ -65,7 +65,7 @@ func showMainMenu(plugins []gsplugin.GitspacePlugin) string {
 	return choice
 }
 
-func handleMainMenu(logger *log.Logger, config **Config, plugins []gsplugin.GitspacePlugin) bool {
+func handleMainMenu(logger *log.Logger, config **Config, plugins []gitspace_plugin.GitspacePlugin) bool {
 	options := []huh.Option[string]{
 		huh.NewOption("Repositories", "repositories"),
 		huh.NewOption("Symlinks", "symlinks"),
@@ -127,14 +127,14 @@ func handleMainMenu(logger *log.Logger, config **Config, plugins []gsplugin.Gits
 	return false
 }
 
-func loadAllPlugins(logger *log.Logger) ([]gsplugin.GitspacePlugin, error) {
+func loadAllPlugins(logger *log.Logger) ([]gitspace_plugin.GitspacePlugin, error) {
 
 	pluginsDir, err := getPluginsDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plugins directory: %w", err)
 	}
 
-	var plugins []gsplugin.GitspacePlugin
+	var plugins []gitspace_plugin.GitspacePlugin
 
 	entries, err := os.ReadDir(pluginsDir)
 	if err != nil {
