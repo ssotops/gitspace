@@ -1,9 +1,0 @@
-[plugin]
-name = "hello-world"
-version = "1.0.0"
-description = "A simple Hello World plugin for Gitspace"
-author = "ssotops"
-
-[menu]
-title = "Hello World"
-key = "hello-world"
