@@ -46,6 +46,12 @@ if ! command -v gum &> /dev/null; then
     fi
 fi
 
+# ASCII Art for gitspace builder using gum
+gum style \
+    --foreground 212 --border-foreground 212 --border double \
+    --align center --width 70 --margin "1 2" --padding "1 2" \
+    "Gitspace Builder"
+
 # Function to update Charm library versions
 update_charm_versions() {
     local dir=$1
@@ -59,15 +65,8 @@ update_charm_versions() {
 # Update main application
 update_charm_versions .
 
-# ASCII Art for gitspace builder using gum
-gum style \
-    --foreground 212 --border-foreground 212 --border double \
-    --align center --width 70 --margin "1 2" --padding "1 2" \
-    "Gitspace Builder"
-
 # Update gitspace-plugin
 gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
-    go mod edit -dropreplace=github.com/ssotops/gitspace-plugin
     go get -u github.com/ssotops/gitspace-plugin@latest
     go mod tidy
 '
@@ -104,7 +103,6 @@ CGO_ENABLED=1 go build -tags pluginload -buildmode=pie -o gitspace .
 gum spin --spinner dot --title "Building hello-world plugin..." -- sleep 2
 cd examples/plugins/hello-world
 update_charm_versions .
-go mod edit -dropreplace=github.com/ssotops/gitspace-plugin
 go get github.com/ssotops/gitspace-plugin@latest
 go mod tidy
 CGO_ENABLED=1 go build -buildmode=plugin -o hello-world.so .
