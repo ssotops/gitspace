@@ -5,7 +5,7 @@ go 1.23.1
 require (
 	github.com/charmbracelet/huh v0.6.0
 	github.com/charmbracelet/log v0.4.0
-	github.com/ssotops/gitspace-plugin v1.0.2
+	github.com/ssotops/gitspace-plugin v1.0.4
 )
 
 require (
