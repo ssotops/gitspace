@@ -46,14 +46,10 @@ if ! command -v gum &> /dev/null; then
     fi
 fi
 
-# Get the current version of github.com/charmbracelet/x
-# CHARM_X_VERSION=$(go list -m github.com/charmbracelet/x | awk '{print $2}')
-
 # Function to update Charm library versions
 update_charm_versions() {
     local dir=$1
     cd "$dir"
-    # go get github.com/charmbracelet/x@latest
     go get github.com/charmbracelet/huh@latest
     go get github.com/charmbracelet/log@latest
     go mod tidy
@@ -63,30 +59,18 @@ update_charm_versions() {
 # Update main application
 update_charm_versions .
 
-# Update gsplugin
-update_charm_versions ./gsplugin
-
 # ASCII Art for gitspace builder using gum
 gum style \
     --foreground 212 --border-foreground 212 --border double \
     --align center --width 70 --margin "1 2" --padding "1 2" \
     "Gitspace Builder"
 
-# Build gsplugin package
-gum spin --spinner dot --title "Building gsplugin package..." -- sleep 2
-cd gsplugin
-if [ ! -f "go.mod" ]; then
-    go mod init github.com/ssotops/gitspace/gsplugin
-fi
-go mod tidy
-if ! go build .; then
-    gum style \
-        --foreground 196 --border-foreground 196 --border normal \
-        --align center --width 70 --margin "1 2" --padding "1 2" \
-        "Failed to build gsplugin package. Please check the error message above."
-    exit 1
-fi
-cd ..
+# Update gitspace-plugin
+gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
+    go mod edit -dropreplace=github.com/ssotops/gitspace-plugin
+    go get -u github.com/ssotops/gitspace-plugin@latest
+    go mod tidy
+'
 
 # Build tools package
 gum spin --spinner dot --title "Building tools package..." -- sleep 2
@@ -120,22 +104,11 @@ CGO_ENABLED=1 go build -tags pluginload -buildmode=pie -o gitspace .
 gum spin --spinner dot --title "Building hello-world plugin..." -- sleep 2
 cd examples/plugins/hello-world
 update_charm_versions .
-go mod edit -replace=github.com/ssotops/gitspace=../../../
-go mod edit -replace=github.com/ssotops/gitspace/gsplugin=../../../gsplugin
+go mod edit -dropreplace=github.com/ssotops/gitspace-plugin
+go get github.com/ssotops/gitspace-plugin@latest
 go mod tidy
 CGO_ENABLED=1 go build -buildmode=plugin -o hello-world.so .
 cd ../../..
-
-# Build templater plugin
-# gum spin --spinner dot --title "Building templater plugin..." -- sleep 2
-# cd examples/plugins/templater
-# update_charm_versions .
-# go mod edit -replace=github.com/ssotops/gitspace=../../../
-# go mod edit -replace=github.com/ssotops/gitspace/gsplugin=../../../gsplugin
-# go get github.com/charmbracelet/x@$CHARM_X_VERSION
-# go mod tidy
-# CGO_ENABLED=1 go build -buildmode=plugin -o templater.so .
-# cd ../../..
 
 gum style \
     --foreground 212 --border-foreground 212 --border normal \
@@ -155,11 +128,12 @@ if gum confirm "Do you want to copy local plugins to the plugins directory?"; th
     for plugin in examples/plugins/*; do
         if [ -d "$plugin" ]; then
             plugin_name=$(basename "$plugin")
-            mkdir -p ~/.ssot/gitspace/plugins/"$plugin_name"
-            cp "$plugin"/*.go ~/.ssot/gitspace/plugins/"$plugin_name"/
-            cp "$plugin"/gitspace-plugin.toml ~/.ssot/gitspace/plugins/"$plugin_name"/
+            plugin_dir=~/.ssot/gitspace/plugins/"$plugin_name"
+            mkdir -p "$plugin_dir"
+            cp "$plugin"/*.go "$plugin_dir"/
+            cp "$plugin"/gitspace-plugin.toml "$plugin_dir"/
             if [ -f "$plugin"/*.so ]; then
-                cp "$plugin"/*.so ~/.ssot/gitspace/plugins/"$plugin_name"/
+                cp "$plugin"/*.so "$plugin_dir"/
             fi
         fi
     done

@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/charmbracelet/log"
+	"github.com/ssotops/gitspace-plugin"
 )
 
 func main() {
@@ -26,6 +27,13 @@ func main() {
 		testPlugin(*pluginName, logger)
 		return
 	}
+
+	currentDeps, err := gitspace_plugin.GetCurrentDependencies()
+	if err != nil {
+		log.Fatal("Failed to get current dependencies:", err)
+	}
+
+	gitspace_plugin.SetSharedDependencies(currentDeps)
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
@@ -71,7 +79,7 @@ func initLogger() *log.Logger {
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
-		Level:           log.DebugLevel,
+		Level:           log.InfoLevel,
 	})
 	logger.Debug("Logger initialized with Debug level")
 	return logger
