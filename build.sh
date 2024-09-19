@@ -99,15 +99,6 @@ cd ..
 gum spin --spinner dot --title "Building Gitspace main application..." -- sleep 2
 CGO_ENABLED=1 go build -tags pluginload -buildmode=pie -o gitspace .
 
-# Build hello-world plugin
-gum spin --spinner dot --title "Building hello-world plugin..." -- sleep 2
-cd examples/plugins/hello-world
-update_charm_versions .
-go get github.com/ssotops/gitspace-plugin@latest
-go mod tidy
-CGO_ENABLED=1 go build -buildmode=plugin -o hello-world.so .
-cd ../../..
-
 gum style \
     --foreground 212 --border-foreground 212 --border normal \
     --align left --width 70 --margin "1 2" --padding "1 2" \
@@ -117,35 +108,35 @@ Tools package: ./tools
 Cmd package: ./cmd
 Plugins directory: ~/.ssot/gitspace/plugins"
 
-# Copy local plugins to the plugins directory
-if gum confirm "Do you want to copy local plugins to the plugins directory?"; then
-    # Create plugins directory if it doesn't exist
-    mkdir -p ~/.ssot/gitspace/plugins
+# # Copy local plugins to the plugins directory
+# if gum confirm "Do you want to copy local plugins to the plugins directory?"; then
+#     # Create plugins directory if it doesn't exist
+#     mkdir -p ~/.ssot/gitspace/plugins
 
-    # Copy local plugins to the plugins directory
-    for plugin in examples/plugins/*; do
-        if [ -d "$plugin" ]; then
-            plugin_name=$(basename "$plugin")
-            plugin_dir=~/.ssot/gitspace/plugins/"$plugin_name"
-            mkdir -p "$plugin_dir"
-            cp "$plugin"/*.go "$plugin_dir"/
-            cp "$plugin"/gitspace-plugin.toml "$plugin_dir"/
-            if [ -f "$plugin"/*.so ]; then
-                cp "$plugin"/*.so "$plugin_dir"/
-            fi
-        fi
-    done
+#     # Copy local plugins to the plugins directory
+#     for plugin in examples/plugins/*; do
+#         if [ -d "$plugin" ]; then
+#             plugin_name=$(basename "$plugin")
+#             plugin_dir=~/.ssot/gitspace/plugins/"$plugin_name"
+#             mkdir -p "$plugin_dir"
+#             cp "$plugin"/*.go "$plugin_dir"/
+#             cp "$plugin"/gitspace-plugin.toml "$plugin_dir"/
+#             if [ -f "$plugin"/*.so ]; then
+#                 cp "$plugin"/*.so "$plugin_dir"/
+#             fi
+#         fi
+#     done
 
-    gum style \
-        --foreground 82 --border-foreground 82 --border normal \
-        --align center --width 70 --margin "1 2" --padding "1 2" \
-        "Local plugins copied to ~/.ssot/gitspace/plugins/"
-else
-    gum style \
-        --foreground 208 --border-foreground 208 --border normal \
-        --align center --width 70 --margin "1 2" --padding "1 2" \
-        "Local plugins were not copied to the plugins directory."
-fi
+#     gum style \
+#         --foreground 82 --border-foreground 82 --border normal \
+#         --align center --width 70 --margin "1 2" --padding "1 2" \
+#         "Local plugins copied to ~/.ssot/gitspace/plugins/"
+# else
+#     gum style \
+#         --foreground 208 --border-foreground 208 --border normal \
+#         --align center --width 70 --margin "1 2" --padding "1 2" \
+#         "Local plugins were not copied to the plugins directory."
+# fi
 
 # Print installed local plugins
 echo "Currently installed local plugins:"
