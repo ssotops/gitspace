@@ -71,29 +71,29 @@ gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
     go mod tidy
 '
 
-# Build tools package
-gum spin --spinner dot --title "Building tools package..." -- sleep 2
-cd tools
-if ! go build .; then
-    gum style \
-        --foreground 196 --border-foreground 196 --border normal \
-        --align center --width 70 --margin "1 2" --padding "1 2" \
-        "Failed to build tools package. Please check the error message above."
-    exit 1
-fi
-cd ..
+# # Build tools package
+# gum spin --spinner dot --title "Building tools package..." -- sleep 2
+# cd tools
+# if ! go build .; then
+#     gum style \
+#         --foreground 196 --border-foreground 196 --border normal \
+#         --align center --width 70 --margin "1 2" --padding "1 2" \
+#         "Failed to build tools package. Please check the error message above."
+#     exit 1
+# fi
+# cd ..
 
-# Build cmd package
-gum spin --spinner dot --title "Building cmd package..." -- sleep 2
-cd cmd
-if ! go build .; then
-    gum style \
-        --foreground 196 --border-foreground 196 --border normal \
-        --align center --width 70 --margin "1 2" --padding "1 2" \
-        "Failed to build cmd package. Please check the error message above."
-    exit 1
-fi
-cd ..
+# # Build cmd package
+# gum spin --spinner dot --title "Building cmd package..." -- sleep 2
+# cd cmd
+# if ! go build .; then
+#     gum style \
+#         --foreground 196 --border-foreground 196 --border normal \
+#         --align center --width 70 --margin "1 2" --padding "1 2" \
+#         "Failed to build cmd package. Please check the error message above."
+#     exit 1
+# fi
+# cd ..
 
 # Build main Gitspace application
 gum spin --spinner dot --title "Building Gitspace main application..." -- sleep 2
@@ -104,8 +104,6 @@ gum style \
     --align left --width 70 --margin "1 2" --padding "1 2" \
     "Build complete!
 Gitspace executable: ./gitspace
-Tools package: ./tools
-Cmd package: ./cmd
 Plugins directory: ~/.ssot/gitspace/plugins"
 
 # # Copy local plugins to the plugins directory

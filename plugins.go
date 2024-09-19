@@ -521,26 +521,6 @@ func ensureGoMod(pluginDir, pluginName string) error {
 	return nil
 }
 
-func executePlugin(logger *log.Logger, pluginPath string) error {
-	p, err := plugin.Open(pluginPath)
-	if err != nil {
-		return fmt.Errorf("failed to open plugin: %w", err)
-	}
-
-	runSymbol, err := p.Lookup("Run")
-	if err != nil {
-		return fmt.Errorf("plugin does not have a Run function: %w", err)
-	}
-
-	runFunc, ok := runSymbol.(func() error)
-	if !ok {
-		return fmt.Errorf("plugin Run function has wrong signature")
-	}
-
-	logger.Info("Running plugin", "path", pluginPath)
-	return runFunc()
-}
-
 func gitClone(url, destPath string) error {
 	cmd := exec.Command("git", "clone", url, destPath)
 	output, err := cmd.CombinedOutput()
