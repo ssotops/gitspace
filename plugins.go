@@ -401,7 +401,7 @@ func listInstalledPlugins(pluginsDir string) ([]huh.Option[string], error) {
 func updatePluginGoMod(logger *log.Logger, pluginDir, pluginName string) error {
 	goModContent := fmt.Sprintf(`module github.com/ssotops/gitspace/plugins/%s
 
-go 1.23.0
+go 1.23.1
 
 require (
 	github.com/charmbracelet/huh latest
