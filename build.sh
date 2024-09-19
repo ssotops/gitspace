@@ -128,11 +128,12 @@ if gum confirm "Do you want to copy local plugins to the plugins directory?"; th
     for plugin in examples/plugins/*; do
         if [ -d "$plugin" ]; then
             plugin_name=$(basename "$plugin")
-            mkdir -p ~/.ssot/gitspace/plugins/"$plugin_name"
-            cp "$plugin"/*.go ~/.ssot/gitspace/plugins/"$plugin_name"/
-            cp "$plugin"/gitspace-plugin.toml ~/.ssot/gitspace/plugins/"$plugin_name"/
+            plugin_dir=~/.ssot/gitspace/plugins/"$plugin_name"
+            mkdir -p "$plugin_dir"
+            cp "$plugin"/*.go "$plugin_dir"/
+            cp "$plugin"/gitspace-plugin.toml "$plugin_dir"/
             if [ -f "$plugin"/*.so ]; then
-                cp "$plugin"/*.so ~/.ssot/gitspace/plugins/"$plugin_name"/
+                cp "$plugin"/*.so "$plugin_dir"/
             fi
         fi
     done

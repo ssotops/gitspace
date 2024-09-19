@@ -210,39 +210,36 @@ func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 	// Construct the raw GitHub URL for the plugin directory
 	rawGitHubURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", owner, repo, defaultBranch, plugin.Path)
 
-	// Create a temporary directory for the plugin
-	tempDir, err := os.MkdirTemp("", "gitspace-plugin-*")
+	// Get the plugins directory
+	pluginsDir, err := getPluginsDir()
 	if err != nil {
-		return fmt.Errorf("failed to create temporary directory: %w", err)
+		return fmt.Errorf("failed to get plugins directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+
+	// Create a directory for the plugin
+	pluginDir := filepath.Join(pluginsDir, catalogItem)
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugin directory: %w", err)
+	}
 
 	// Download the gitspace-plugin.toml file
 	manifestURL := fmt.Sprintf("%s/gitspace-plugin.toml", rawGitHubURL)
-	manifestPath := filepath.Join(tempDir, "gitspace-plugin.toml")
+	manifestPath := filepath.Join(pluginDir, "gitspace-plugin.toml")
 	err = downloadFile(manifestURL, manifestPath)
 	if err != nil {
 		return fmt.Errorf("failed to download gitspace-plugin.toml: %w", err)
 	}
 
-	// Parse the gitspace-plugin.toml file
-	pluginManifest, err := loadPluginManifest(manifestPath)
+	// Download the .so file
+	soURL := fmt.Sprintf("%s/dist/%s.so", rawGitHubURL, catalogItem)
+	soPath := filepath.Join(pluginDir, catalogItem+".so")
+	err = downloadFile(soURL, soPath)
 	if err != nil {
-		return fmt.Errorf("failed to load plugin manifest: %w", err)
+		return fmt.Errorf("failed to download %s.so: %w", catalogItem, err)
 	}
 
-	// Download each source file specified in the manifest
-	for _, source := range pluginManifest.Plugin.Sources {
-		sourceURL := fmt.Sprintf("%s/%s", rawGitHubURL, source.Path)
-		sourcePath := filepath.Join(tempDir, source.Path)
-		err = downloadFile(sourceURL, sourcePath)
-		if err != nil {
-			return fmt.Errorf("failed to download source file %s: %w", source.Path, err)
-		}
-	}
-
-	// Now install the plugin from the temporary directory
-	return installPlugin(logger, tempDir)
+	logger.Info("Plugin installed successfully", "name", catalogItem, "path", pluginDir)
+	return nil
 }
 
 func loadPlugin(pluginPath string) (GitspacePlugin, error) {
