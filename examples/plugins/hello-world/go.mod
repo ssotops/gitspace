@@ -1,11 +1,11 @@
 module github.com/ssotops/gitspace/plugins/hello_world
 
-go 1.23.0
+go 1.23.1
 
 require (
 	github.com/charmbracelet/huh v0.6.0
 	github.com/charmbracelet/log v0.4.0
-	github.com/ssotops/gitspace-plugin v0.0.0-00010101000000-000000000000
+	github.com/ssotops/gitspace-plugin v1.0.2
 )
 
 require (
