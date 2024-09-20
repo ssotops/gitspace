@@ -172,6 +172,9 @@ done
 gum spin --spinner dot --title "Building Gitspace main application..." -- sleep 2
 CGO_ENABLED=1 go build -tags pluginload -buildmode=pie -o gitspace .
 
+# In gitspace's build script, for `gitspace-plugin`
+go mod graph | awk '{print $2}' | sort | uniq | awk -F@ '{print "\""$1"\": \""$2"\""}' | jq -s 'reduce .[] as $item ({}; . + $item)' > ~/.ssot/gitspace/canonical-deps.json
+
 # Rebuild plugins
 for plugin_dir in "$plugins_dir"/*; do
     if [ -d "$plugin_dir" ]; then

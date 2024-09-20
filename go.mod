@@ -13,11 +13,13 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pelletier/go-toml/v2 v2.2.3
+	github.com/ssotops/gitspace-plugin v1.0.13
 	golang.org/x/oauth2 v0.20.0
 )
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
+	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/ProtonMail/go-crypto v1.0.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
@@ -63,6 +65,8 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 
-exclude github.com/ssotops/gitspace/examples/plugins v0.0.0
-
 replace github.com/ssotops/gitspace/lib => ./lib
+
+replace github.com/ssotops/gitspace-plugin => /Users/alechp/.ssot/gitspace/.repositories/github.com/ssotops/gitspace-plugin
+
+// replace github.com/ssotops/gitspace-plugin/gsplug => ../gitspace-plugin/gsplug

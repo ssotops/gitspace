@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
-  "os"
+	"os"
 	"path/filepath"
 	"plugin"
+	"strings"
 
 	"github.com/charmbracelet/log"
+	"github.com/ssotops/gitspace-plugin/gsplug"
 )
 
 func runPlugin(logger *log.Logger, pluginName string) error {
@@ -17,12 +19,19 @@ func runPlugin(logger *log.Logger, pluginName string) error {
 	}
 	logger.Debug("Plugins directory", "path", pluginsDir)
 
-	// Update the plugin path to include the 'dist' directory
-	pluginPath := filepath.Join(pluginsDir, pluginName, "dist", fmt.Sprintf("%s.so", pluginName))
+	pluginDir := filepath.Join(pluginsDir, pluginName)
+	if needsRebuild(logger, pluginDir) {
+		logger.Info("Plugin needs rebuilding", "plugin", pluginName)
+		if err := gsplug.BuildPlugin(pluginDir); err != nil {
+			logger.Error("Failed to rebuild plugin", "plugin", pluginName, "error", err)
+			return fmt.Errorf("failed to rebuild plugin: %w", err)
+		}
+	}
+
+	pluginPath := filepath.Join(pluginDir, "dist", fmt.Sprintf("%s.so", pluginName))
 	logger.Debug("Attempting to open plugin", "path", pluginPath)
 
-	_, err = os.Stat(pluginPath)
-	if os.IsNotExist(err) {
+	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
 		logger.Error("Plugin file does not exist", "path", pluginPath)
 		return fmt.Errorf("plugin file does not exist: %s", pluginPath)
 	}
@@ -54,4 +63,38 @@ func runPlugin(logger *log.Logger, pluginName string) error {
 
 	logger.Info("Plugin executed successfully")
 	return nil
+}
+
+func needsRebuild(logger *log.Logger, pluginDir string) bool {
+	canonicalDeps, err := gsplug.GetCanonicalDeps()
+	if err != nil {
+		logger.Warn("Failed to get canonical dependencies", "error", err)
+		return true
+	}
+
+	goModPath := filepath.Join(pluginDir, "go.mod")
+	content, err := os.ReadFile(goModPath)
+	if err != nil {
+		logger.Warn("Failed to read go.mod", "error", err)
+		return true
+	}
+
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "require ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				module := parts[1]
+				version := parts[2]
+				if canonicalVersion, ok := canonicalDeps.Versions[module]; ok {
+					if version != canonicalVersion {
+						logger.Debug("Version mismatch detected", "module", module, "plugin_version", version, "canonical_version", canonicalVersion)
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
 }
