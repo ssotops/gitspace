@@ -65,22 +65,23 @@ update_charm_versions() {
 # Update main application
 update_charm_versions .
 
-# Update gitspace-plugin
+# Update gitspace-plugin to the latest version
 gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
     go get -u github.com/ssotops/gitspace-plugin@latest
     go mod tidy
+    go mod download
 '
+
+# Ensure we're using the latest version
+latest_version=$(go list -m -f "{{.Version}}" github.com/ssotops/gitspace-plugin)
+gum style \
+    --foreground 82 --border-foreground 82 --border normal \
+    --align center --width 70 --margin "1 2" --padding "1 2" \
+    "Using gitspace-plugin version: $latest_version"
 
 # Build main Gitspace application
 gum spin --spinner dot --title "Building Gitspace main application..." -- sleep 2
 CGO_ENABLED=1 go build -tags pluginload -buildmode=pie -o gitspace .
-
-gum style \
-    --foreground 212 --border-foreground 212 --border normal \
-    --align left --width 70 --margin "1 2" --padding "1 2" \
-    "Build complete!
-Gitspace executable: ./gitspace
-Plugins directory: ~/.ssot/gitspace/plugins"
 
 # Print installed local plugins
 echo "Currently installed local plugins:"
