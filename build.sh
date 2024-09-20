@@ -113,11 +113,16 @@ update_gitspace_plugin .
 
 # Force update gitspace-plugin to the latest version
 gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
-    go clean -modcache
     go get -u github.com/ssotops/gitspace-plugin@latest
     go mod tidy
-    go mod download
 '
+
+# gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
+#     go clean -modcache
+#     go get -u github.com/ssotops/gitspace-plugin@latest
+#     go mod tidy
+#     go mod download
+# '
 
 # Ensure we're using the latest version
 latest_version=$(go list -m -json github.com/ssotops/gitspace-plugin | jq -r .Version)

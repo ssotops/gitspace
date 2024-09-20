@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -36,7 +37,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func copyDir(src, dst string) error {
+func copyDir(src string, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -46,12 +47,32 @@ func copyDir(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		destPath := filepath.Join(dst, relPath)
+		dstPath := filepath.Join(dst, relPath)
 
 		if info.IsDir() {
-			return os.MkdirAll(destPath, info.Mode())
+			return os.MkdirAll(dstPath, info.Mode())
 		}
 
-		return copyFile(path, destPath)
+		return copyFile(path, dstPath)
 	})
+}
+
+func copyFile(src, dst string) error {
+	// Ensure the destination directory exists
+	dstDir := filepath.Dir(dst)
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	input, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("failed to read source file: %w", err)
+	}
+
+	err = os.WriteFile(dst, input, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write destination file: %w", err)
+	}
+
+	return nil
 }

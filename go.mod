@@ -13,7 +13,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pelletier/go-toml/v2 v2.2.3
-	github.com/ssotops/gitspace-plugin v1.0.10
+	github.com/ssotops/gitspace-plugin v1.0.11
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/oauth2 v0.20.0
 )
@@ -70,7 +70,4 @@ require (
 
 exclude github.com/ssotops/gitspace/examples/plugins v0.0.0
 
-replace (
-	github.com/ssotops/gitspace/lib => ./lib
-	github.com/ssotops/gitspace/tools => ./tools
-)
+replace github.com/ssotops/gitspace/lib => ./lib

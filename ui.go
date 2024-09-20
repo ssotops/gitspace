@@ -152,7 +152,8 @@ func loadAllPlugins(logger *log.Logger) ([]gitspace_plugin.GitspacePlugin, error
 	for _, entry := range entries {
 		if entry.IsDir() {
 			pluginPath := filepath.Join(pluginsDir, entry.Name(), entry.Name()+".so")
-			plugin, err := loadPluginWithTimeout(pluginPath, 10*time.Second)
+
+			plugin, err := loadPluginWithTimeout(pluginPath, 30*time.Second) // Increase timeout to 30 seconds
 			if err != nil {
 				logger.Warn("Failed to load plugin", "name", entry.Name(), "error", err)
 				continue // Skip this plugin and continue with others

@@ -260,15 +260,19 @@ func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 func loadPlugin(pluginPath string) (gitspace_plugin.GitspacePlugin, error) {
 	plugin, err := gitspace_plugin.LoadPluginWithConfig(pluginPath)
 	if err != nil {
+		log.Printf("Initial plugin load failed: %v", err)
+
 		// If loading fails, attempt to rebuild the plugin
 		rebuildErr := rebuildPlugin(pluginPath)
 		if rebuildErr != nil {
+			log.Printf("Plugin rebuild failed: %v", rebuildErr)
 			return nil, fmt.Errorf("failed to load plugin and rebuild failed: %w", rebuildErr)
 		}
 
 		// Try loading the plugin again after rebuilding
 		plugin, err = gitspace_plugin.LoadPluginWithConfig(pluginPath)
 		if err != nil {
+			log.Printf("Plugin load after rebuild failed: %v", err)
 			return nil, fmt.Errorf("failed to load plugin after rebuild: %w", err)
 		}
 	}
@@ -278,29 +282,96 @@ func loadPlugin(pluginPath string) (gitspace_plugin.GitspacePlugin, error) {
 
 func rebuildPlugin(pluginPath string) error {
 	pluginDir := filepath.Dir(pluginPath)
+	pluginName := filepath.Base(pluginDir)
 
-	// Update go.mod to use the latest version of gitspace-plugin
-	cmd := exec.Command("go", "get", "-u", "github.com/ssotops/gitspace-plugin@latest")
-	cmd.Dir = pluginDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update gitspace-plugin: %w\nOutput: %s", err, output)
+	// Create a lock file
+	lockFile := filepath.Join(pluginDir, ".rebuild-lock")
+	if _, err := os.Stat(lockFile); err == nil {
+		return fmt.Errorf("another rebuild process is already running")
 	}
 
-	// Run go mod tidy
-	cmd = exec.Command("go", "mod", "tidy")
-	cmd.Dir = pluginDir
+	// Create the lock file
+	if _, err := os.Create(lockFile); err != nil {
+		return fmt.Errorf("failed to create lock file: %w", err)
+	}
+	defer os.Remove(lockFile)
+
+	// Create a temporary directory
+	tempDir, err := os.MkdirTemp("", "gitspace-plugin-rebuild-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Copy plugin files to temp directory
+	if err := copyDir(pluginDir, tempDir); err != nil {
+		return fmt.Errorf("failed to copy plugin files: %w", err)
+	}
+
+	// Remove existing go.mod and go.sum files
+	os.Remove(filepath.Join(tempDir, "go.mod"))
+	os.Remove(filepath.Join(tempDir, "go.sum"))
+
+	// Initialize a new module in the temp directory
+	cmd := exec.Command("go", "mod", "init", "github.com/ssotops/gitspace/plugins/"+pluginName)
+	cmd.Dir = tempDir
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to tidy go.mod: %w\nOutput: %s", err, output)
+		return fmt.Errorf("failed to initialize module: %w\nOutput: %s", err, output)
+	}
+
+	// Get the current version of gitspace
+	gitspaceVersion, err := getGitspaceVersion()
+	if err != nil {
+		return fmt.Errorf("failed to get gitspace version: %w", err)
+	}
+
+	// Update dependencies
+	cmd = exec.Command("go", "get",
+		"github.com/ssotops/gitspace-plugin@latest",
+		fmt.Sprintf("github.com/ssotops/gitspace@%s", gitspaceVersion))
+	cmd.Dir = tempDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to update dependencies: %w\nOutput: %s", err, output)
+	}
+
+	// Tidy up the module
+	cmd = exec.Command("go", "mod", "tidy")
+	cmd.Dir = tempDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to tidy plugin module: %w\nOutput: %s", err, output)
 	}
 
 	// Rebuild the plugin
-	cmd = exec.Command("go", "build", "-buildmode=plugin", "-o", pluginPath)
-	cmd.Dir = pluginDir
+	cmd = exec.Command("go", "build", "-buildmode=plugin", "-o", filepath.Join(tempDir, pluginName+".so"))
+	cmd.Dir = tempDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to rebuild plugin: %w\nOutput: %s", err, output)
 	}
 
+	// Copy the rebuilt plugin back to the original location
+	if err := copyFile(filepath.Join(tempDir, pluginName+".so"), pluginPath); err != nil {
+		return fmt.Errorf("failed to copy rebuilt plugin: %w", err)
+	}
+
+	// Copy the new go.mod and go.sum files back to the original location
+	if err := copyFile(filepath.Join(tempDir, "go.mod"), filepath.Join(pluginDir, "go.mod")); err != nil {
+		return fmt.Errorf("failed to copy go.mod: %w", err)
+	}
+	if err := copyFile(filepath.Join(tempDir, "go.sum"), filepath.Join(pluginDir, "go.sum")); err != nil {
+		return fmt.Errorf("failed to copy go.sum: %w", err)
+	}
+
 	return nil
+}
+
+// Add this function to get the current gitspace version
+func getGitspaceVersion() (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Version}}", "github.com/ssotops/gitspace")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get gitspace version: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 func downloadFile(url string, filepath string) error {
@@ -341,26 +412,6 @@ func loadPluginManifest(path string) (*PluginManifest, error) {
 	}
 
 	return &manifest, nil
-}
-
-func copyFile(src, dst string) error {
-	// Ensure the destination directory exists
-	dstDir := filepath.Dir(dst)
-	if err := os.MkdirAll(dstDir, 0755); err != nil {
-		return fmt.Errorf("failed to create destination directory: %w", err)
-	}
-
-	input, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("failed to read source file: %w", err)
-	}
-
-	err = os.WriteFile(dst, input, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write destination file: %w", err)
-	}
-
-	return nil
 }
 
 func uninstallPlugin(logger *log.Logger, name string) error {
