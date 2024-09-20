@@ -32,7 +32,6 @@ func handleMainMenu(logger *log.Logger, config **Config) bool {
 	options := []huh.Option[string]{
 		huh.NewOption("Repositories", "repositories"),
 		huh.NewOption("Symlinks", "symlinks"),
-		huh.NewOption("Sync Labels", "sync"),
 		huh.NewOption("Plugins", "plugins"),
 		huh.NewOption("Gitspace", "gitspace"),
 		huh.NewOption("Quit", "quit"),
