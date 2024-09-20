@@ -667,7 +667,7 @@ func testPlugin(name string, logger *log.Logger) {
 		os.Exit(1)
 	}
 
-	var targetPlugin GitspacePlugin
+	var targetPlugin gitspace_plugin.GitspacePlugin
 	for _, p := range plugins {
 		if p.Name() == name {
 			targetPlugin = p
@@ -676,25 +676,8 @@ func testPlugin(name string, logger *log.Logger) {
 	}
 
 	if targetPlugin == nil {
-		logger.Info("Plugin not found locally, attempting to fetch from remote", "name", name)
-		err := fetchAndInstallRemotePlugin(logger, name)
-		if err != nil {
-			logger.Error("Failed to fetch and install remote plugin", "name", name, "error", err)
-			os.Exit(1)
-		}
-
-		pluginsDir, err := getPluginsDir()
-		if err != nil {
-			logger.Error("Failed to get plugins directory", "error", err)
-			os.Exit(1)
-		}
-
-		// Attempt to load the plugin again
-		targetPlugin, err = loadPlugin(filepath.Join(pluginsDir, name, name+".so"))
-		if err != nil {
-			logger.Error("Failed to load newly installed plugin", "name", name, "error", err)
-			os.Exit(1)
-		}
+		logger.Error("Plugin not found", "name", name)
+		os.Exit(1)
 	}
 
 	logger.Info("Testing plugin", "name", name)
