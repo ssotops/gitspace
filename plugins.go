@@ -5,24 +5,26 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"plugin"
-	"runtime"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
 	"github.com/pelletier/go-toml/v2"
-	gitspace_plugin "github.com/ssotops/gitspace-plugin"
-	"github.com/ssotops/gitspace/lib"
 )
 
-// Use the types from github.com/ssotops/gitspace-plugin
-type GitspacePlugin = gitspace_plugin.GitspacePlugin
-type PluginConfig = gitspace_plugin.PluginConfig
-type PluginManifest = gitspace_plugin.PluginManifest
+type PluginManifest struct {
+	Metadata struct {
+		Name        string   `toml:"name"`
+		Version     string   `toml:"version"`
+		Description string   `toml:"description"`
+		Author      string   `toml:"author"`
+		Tags        []string `toml:"tags"`
+	} `toml:"metadata"`
+	Sources []struct {
+		Path string `toml:"path"`
+	} `toml:"sources"`
+}
 
 func getPluginsDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -152,55 +154,7 @@ func installPlugin(logger *log.Logger, source string) error {
 		}
 	}
 
-	// Create or update go.mod file
-	goModPath := filepath.Join(pluginDir, "go.mod")
-	if _, err := os.Stat(goModPath); os.IsNotExist(err) {
-		logger.Debug("Creating go.mod file", "path", goModPath)
-		modulePath := fmt.Sprintf("github.com/ssotops/gitspace/plugins/%s", manifest.Metadata.Name)
-		cmd := exec.Command("go", "mod", "init", modulePath)
-		cmd.Dir = pluginDir
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to initialize go.mod: %w\nOutput: %s", err, output)
-		}
-	}
-
-	// Update go.mod to use the same Go version as the main program
-	logger.Debug("Updating go.mod version", "path", goModPath)
-	goVersion := strings.TrimPrefix(runtime.Version(), "go")
-	cmd := exec.Command("go", "mod", "edit", "-go", goVersion)
-	cmd.Dir = pluginDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update go.mod version: %w\nOutput: %s", err, output)
-	}
-
-	// Run go mod tidy to ensure all dependencies are properly managed
-	logger.Debug("Running go mod tidy", "path", pluginDir)
-	cmd = exec.Command("go", "mod", "tidy")
-	cmd.Dir = pluginDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to tidy go.mod: %w\nOutput: %s", err, output)
-	}
-
-	// After copying plugin files, build the plugin
-	err = buildPlugin(logger, pluginDir)
-	if err != nil {
-		return fmt.Errorf("failed to build plugin: %w", err)
-	}
-
 	logger.Info("Plugin installed successfully", "name", manifest.Metadata.Name, "path", pluginDir)
-	return nil
-}
-
-func buildPlugin(logger *log.Logger, pluginDir string) error {
-	cmd := exec.Command("go", "build", "-buildmode=plugin", "-o", filepath.Join(pluginDir, filepath.Base(pluginDir)+".so"), ".")
-	cmd.Dir = pluginDir
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to build plugin: %w\nOutput: %s", err, output)
-	}
-
 	return nil
 }
 
@@ -245,133 +199,23 @@ func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 		return fmt.Errorf("failed to download gitspace-plugin.toml: %w", err)
 	}
 
-	// Download the .so file
-	soURL := fmt.Sprintf("%s/dist/%s.so", rawGitHubURL, catalogItem)
-	soPath := filepath.Join(pluginDir, catalogItem+".so")
-	err = downloadFile(soURL, soPath)
+	// Download the source files
+	manifest, err := loadPluginManifest(manifestPath)
 	if err != nil {
-		return fmt.Errorf("failed to download %s.so: %w", catalogItem, err)
+		return fmt.Errorf("failed to load manifest: %w", err)
+	}
+
+	for _, source := range manifest.Sources {
+		sourceURL := fmt.Sprintf("%s/%s", rawGitHubURL, source.Path)
+		destPath := filepath.Join(pluginDir, source.Path)
+		err = downloadFile(sourceURL, destPath)
+		if err != nil {
+			return fmt.Errorf("failed to download %s: %w", source.Path, err)
+		}
 	}
 
 	logger.Info("Plugin installed successfully", "name", catalogItem, "path", pluginDir)
 	return nil
-}
-
-func loadPlugin(pluginPath string) (gitspace_plugin.GitspacePlugin, error) {
-	plugin, err := gitspace_plugin.LoadPluginWithConfig(pluginPath)
-	if err != nil {
-		log.Printf("Initial plugin load failed: %v", err)
-
-		// If loading fails, attempt to rebuild the plugin
-		rebuildErr := rebuildPlugin(pluginPath)
-		if rebuildErr != nil {
-			log.Printf("Plugin rebuild failed: %v", rebuildErr)
-			return nil, fmt.Errorf("failed to load plugin and rebuild failed: %w", rebuildErr)
-		}
-
-		// Try loading the plugin again after rebuilding
-		plugin, err = gitspace_plugin.LoadPluginWithConfig(pluginPath)
-		if err != nil {
-			log.Printf("Plugin load after rebuild failed: %v", err)
-			return nil, fmt.Errorf("failed to load plugin after rebuild: %w", err)
-		}
-	}
-
-	return plugin, nil
-}
-
-func rebuildPlugin(pluginPath string) error {
-	pluginDir := filepath.Dir(pluginPath)
-	pluginName := filepath.Base(pluginDir)
-
-	// Create a lock file
-	lockFile := filepath.Join(pluginDir, ".rebuild-lock")
-	if _, err := os.Stat(lockFile); err == nil {
-		return fmt.Errorf("another rebuild process is already running")
-	}
-
-	// Create the lock file
-	if _, err := os.Create(lockFile); err != nil {
-		return fmt.Errorf("failed to create lock file: %w", err)
-	}
-	defer os.Remove(lockFile)
-
-	// Create a temporary directory
-	tempDir, err := os.MkdirTemp("", "gitspace-plugin-rebuild-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Copy plugin files to temp directory
-	if err := copyDir(pluginDir, tempDir); err != nil {
-		return fmt.Errorf("failed to copy plugin files: %w", err)
-	}
-
-	// Remove existing go.mod and go.sum files
-	os.Remove(filepath.Join(tempDir, "go.mod"))
-	os.Remove(filepath.Join(tempDir, "go.sum"))
-
-	// Initialize a new module in the temp directory
-	cmd := exec.Command("go", "mod", "init", "github.com/ssotops/gitspace/plugins/"+pluginName)
-	cmd.Dir = tempDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to initialize module: %w\nOutput: %s", err, output)
-	}
-
-	// Get the current version of gitspace
-	gitspaceVersion, err := getGitspaceVersion()
-	if err != nil {
-		return fmt.Errorf("failed to get gitspace version: %w", err)
-	}
-
-	// Update dependencies
-	cmd = exec.Command("go", "get",
-		"github.com/ssotops/gitspace-plugin@latest",
-		fmt.Sprintf("github.com/ssotops/gitspace@%s", gitspaceVersion))
-	cmd.Dir = tempDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update dependencies: %w\nOutput: %s", err, output)
-	}
-
-	// Tidy up the module
-	cmd = exec.Command("go", "mod", "tidy")
-	cmd.Dir = tempDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to tidy plugin module: %w\nOutput: %s", err, output)
-	}
-
-	// Rebuild the plugin
-	cmd = exec.Command("go", "build", "-buildmode=plugin", "-o", filepath.Join(tempDir, pluginName+".so"))
-	cmd.Dir = tempDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to rebuild plugin: %w\nOutput: %s", err, output)
-	}
-
-	// Copy the rebuilt plugin back to the original location
-	if err := copyFile(filepath.Join(tempDir, pluginName+".so"), pluginPath); err != nil {
-		return fmt.Errorf("failed to copy rebuilt plugin: %w", err)
-	}
-
-	// Copy the new go.mod and go.sum files back to the original location
-	if err := copyFile(filepath.Join(tempDir, "go.mod"), filepath.Join(pluginDir, "go.mod")); err != nil {
-		return fmt.Errorf("failed to copy go.mod: %w", err)
-	}
-	if err := copyFile(filepath.Join(tempDir, "go.sum"), filepath.Join(pluginDir, "go.sum")); err != nil {
-		return fmt.Errorf("failed to copy go.sum: %w", err)
-	}
-
-	return nil
-}
-
-// Add this function to get the current gitspace version
-func getGitspaceVersion() (string, error) {
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Version}}", "github.com/ssotops/gitspace")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get gitspace version: %w", err)
-	}
-	return strings.TrimSpace(string(output)), nil
 }
 
 func downloadFile(url string, filepath string) error {
@@ -449,51 +293,52 @@ func printInstalledPlugins(logger *log.Logger) error {
 	return nil
 }
 
-func runPlugin(logger *log.Logger) error {
-	pluginsDir, err := getPluginsDir()
+// This function needs to be implemented or imported from the appropriate package
+func fetchGitspaceCatalog(owner, repo string) (*GitspaceCatalog, error) {
+	// Implementation needed
+	return nil, fmt.Errorf("fetchGitspaceCatalog not implemented")
+}
+
+// GitspaceCatalog struct needs to be defined
+type GitspaceCatalog struct {
+	Plugins map[string]CatalogPlugin
+}
+
+type CatalogPlugin struct {
+	Path string
+	// Add other necessary fields
+}
+
+func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
+	owner := "ssotops"
+	repo := "gitspace-catalog"
+	catalog, err := fetchGitspaceCatalog(owner, repo)
 	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
+		logger.Error("Failed to fetch Gitspace Catalog", "error", err)
+		return "", err
 	}
 
-	plugins, err := listInstalledPlugins(pluginsDir)
-	if err != nil {
-		return fmt.Errorf("failed to list installed plugins: %w", err)
+	var options []huh.Option[string]
+	for name := range catalog.Plugins {
+		options = append(options, huh.NewOption(name, "catalog://"+name))
 	}
 
-	if len(plugins) == 0 {
-		logger.Info("No plugins installed")
-		return nil
+	if len(options) == 0 {
+		return "", fmt.Errorf("no plugins found in the catalog")
 	}
 
-	var selectedPlugin string
+	var selectedItem string
 	err = huh.NewSelect[string]().
-		Title("Select a plugin to run").
-		Options(plugins...).
-		Value(&selectedPlugin).
+		Title("Select a plugin to install").
+		Options(options...).
+		Value(&selectedItem).
 		Run()
 
 	if err != nil {
-		return fmt.Errorf("failed to select plugin: %w", err)
+		return "", fmt.Errorf("failed to select item: %w", err)
 	}
 
-	pluginPath := filepath.Join(pluginsDir, selectedPlugin, selectedPlugin+".so")
-	plugin, err := gitspace_plugin.LoadPluginWithConfig(pluginPath)
-	if err != nil {
-		return fmt.Errorf("failed to load plugin: %w", err)
-	}
-
-	logger.Info("Running plugin", "name", plugin.Name(), "version", plugin.Version())
-	return plugin.Run(logger)
-}
-
-func runPluginFromPath(logger *log.Logger, pluginPath string) error {
-	plugin, err := loadPlugin(pluginPath)
-	if err != nil {
-		return fmt.Errorf("failed to load plugin: %w", err)
-	}
-
-	logger.Info("Running plugin", "name", plugin.Name(), "version", plugin.Version())
-	return plugin.Run(logger)
+	return selectedItem, nil
 }
 
 func listInstalledPlugins(pluginsDir string) ([]huh.Option[string], error) {
@@ -509,317 +354,4 @@ func listInstalledPlugins(pluginsDir string) ([]huh.Option[string], error) {
 		}
 	}
 	return options, nil
-}
-
-func updatePluginGoMod(logger *log.Logger, pluginDir, pluginName string) error {
-	goModContent := fmt.Sprintf(`module github.com/ssotops/gitspace/plugins/%s
-
-go 1.23.1
-
-require (
-	github.com/charmbracelet/huh latest
-	github.com/charmbracelet/log latest
-	github.com/ssotops/gitspace latest
-)
-
-replace github.com/ssotops/gitspace => ../../../
-`, pluginName)
-
-	goModPath := filepath.Join(pluginDir, "go.mod")
-	err := os.WriteFile(goModPath, []byte(goModContent), 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write go.mod file: %w", err)
-	}
-
-	cmd := exec.Command("go", "mod", "tidy")
-	cmd.Dir = pluginDir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logger.Error("Failed to tidy plugin module", "output", string(output), "error", err)
-		return fmt.Errorf("failed to tidy plugin module: %w", err)
-	}
-
-	logger.Debug("Updated and tidied plugin go.mod", "output", string(output))
-	return nil
-}
-
-func compileAndRunPlugin(logger *log.Logger, pluginDir, pluginName string) error {
-	logger.Debug("Starting compileAndRunPlugin", "pluginDir", pluginDir, "pluginName", pluginName)
-
-	// Compile the plugin
-	pluginFile := filepath.Join(pluginDir, pluginName+".so")
-	buildCmd := exec.Command("go", "build", "-buildmode=plugin", "-o", pluginFile)
-	buildCmd.Dir = pluginDir
-	buildCmd.Env = append(os.Environ(),
-		"CGO_ENABLED=1",
-		fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
-		fmt.Sprintf("GOOS=%s", runtime.GOOS),
-		"GO111MODULE=on",
-	)
-
-	output, err := buildCmd.CombinedOutput()
-	if err != nil {
-		logger.Error("Plugin compilation failed", "output", string(output), "error", err)
-		return fmt.Errorf("failed to compile plugin: %w\nOutput: %s", err, output)
-	}
-
-	logger.Debug("Plugin compiled successfully", "output", string(output))
-
-	// Load and run the plugin
-	logger.Debug("Attempting to open plugin", "path", pluginFile)
-	p, err := plugin.Open(pluginFile)
-	if err != nil {
-		logger.Error("Failed to open plugin", "error", err)
-		return fmt.Errorf("failed to open plugin: %w", err)
-	}
-
-	logger.Debug("Plugin opened successfully")
-
-	logger.Debug("Looking up Plugin symbol")
-	symPlugin, err := p.Lookup("Plugin")
-	if err != nil {
-		logger.Error("Failed to lookup Plugin symbol", "error", err)
-		return fmt.Errorf("plugin does not have a Plugin symbol: %w", err)
-	}
-
-	logger.Debug("Found Plugin symbol")
-
-	plugin, ok := symPlugin.(GitspacePlugin)
-	if !ok {
-		logger.Error("Plugin does not implement GitspacePlugin interface")
-		return fmt.Errorf("plugin does not implement GitspacePlugin interface")
-	}
-
-	logger.Info("Running plugin", "name", pluginName)
-	return plugin.Run(logger)
-}
-
-func compilePlugin(logger *log.Logger, pluginDir, pluginName string) error {
-	pluginFile := filepath.Join(pluginDir, pluginName+".so")
-	buildCmd := exec.Command("go", "build", "-buildmode=plugin", "-o", pluginFile)
-	buildCmd.Dir = pluginDir
-	buildCmd.Env = append(os.Environ(),
-		"CGO_ENABLED=1",
-		fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
-		fmt.Sprintf("GOOS=%s", runtime.GOOS),
-		"GO111MODULE=on",
-	)
-
-	output, err := buildCmd.CombinedOutput()
-	if err != nil {
-		logger.Error("Plugin compilation failed", "output", string(output), "error", err)
-		return fmt.Errorf("failed to compile plugin: %w\nOutput: %s", err, output)
-	}
-
-	logger.Debug("Plugin compiled successfully", "output", string(output))
-	return nil
-}
-
-func ensureGoMod(pluginDir, pluginName string) error {
-	goModPath := filepath.Join(pluginDir, "go.mod")
-	if _, err := os.Stat(goModPath); os.IsNotExist(err) {
-		cmd := exec.Command("go", "mod", "init", fmt.Sprintf("gitspace.com/plugin/%s", pluginName))
-		cmd.Dir = pluginDir
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to initialize go.mod: %w\nOutput: %s", err, output)
-		}
-	}
-
-	cmd := exec.Command("go", "mod", "tidy")
-	cmd.Dir = pluginDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to tidy go.mod: %w\nOutput: %s", err, output)
-	}
-
-	return nil
-}
-
-func gitClone(url, destPath string) error {
-	cmd := exec.Command("git", "clone", url, destPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git clone failed: %w\nOutput: %s", err, output)
-	}
-	return nil
-}
-
-func fetchGitspaceCatalog(owner, repo string) (*lib.GitspaceCatalog, error) {
-	return lib.FetchGitspaceCatalog(owner, repo)
-}
-
-func fetchAndInstallRemotePlugin(logger *log.Logger, pluginName string) error {
-	owner := "ssotops"
-	repo := "gitspace-catalog"
-
-	catalog, err := fetchGitspaceCatalog(owner, repo)
-	if err != nil {
-		return fmt.Errorf("failed to fetch catalog: %w", err)
-	}
-
-	pluginInfo, ok := catalog.Plugins[pluginName]
-	if !ok {
-		return fmt.Errorf("plugin %s not found in catalog", pluginName)
-	}
-
-	baseURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/master/%s/", owner, repo, pluginInfo.Path)
-
-	pluginsDir, err := getPluginsDir()
-	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
-	}
-
-	pluginDir := filepath.Join(pluginsDir, pluginName)
-	if err := os.MkdirAll(pluginDir, 0755); err != nil {
-		return fmt.Errorf("failed to create plugin directory: %w", err)
-	}
-
-	filesToDownload := []string{"plugin.go", "gitspace-plugin.toml"}
-	for _, file := range filesToDownload {
-		fileURL := baseURL + file
-		filePath := filepath.Join(pluginDir, file)
-		if err := downloadFile(fileURL, filePath); err != nil {
-			return fmt.Errorf("failed to download %s: %w", file, err)
-		}
-	}
-
-	// Initialize Go module or update existing one
-	if err := initOrUpdateGoModule(logger, pluginDir, pluginName); err != nil {
-		logger.Error("Failed to initialize or update Go module", "error", err)
-		// Continue despite the error
-	}
-
-	// Add dependencies
-	if err := addDependencies(logger, pluginDir); err != nil {
-		logger.Error("Failed to add all dependencies", "error", err)
-		// Continue despite the error
-	}
-
-	// Compile the plugin
-	if err := compilePlugin(logger, pluginDir, pluginName); err != nil {
-		return fmt.Errorf("failed to compile plugin: %w", err)
-	}
-
-	logger.Info("Successfully fetched and installed remote plugin", "name", pluginName)
-	return nil
-}
-
-func initOrUpdateGoModule(logger *log.Logger, pluginDir, pluginName string) error {
-	goModPath := filepath.Join(pluginDir, "go.mod")
-	if _, err := os.Stat(goModPath); os.IsNotExist(err) {
-		// Initialize new module
-		cmd := exec.Command("go", "mod", "init", fmt.Sprintf("github.com/ssotops/gitspace-plugins/%s", pluginName))
-		cmd.Dir = pluginDir
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			logger.Error("Failed to initialize Go module", "output", string(output), "error", err)
-			return fmt.Errorf("failed to initialize Go module: %w", err)
-		}
-		logger.Debug("Initialized Go module", "output", string(output))
-	} else {
-		// Update existing module
-		cmd := exec.Command("go", "get", "-u")
-		cmd.Dir = pluginDir
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			logger.Error("Failed to update Go module", "output", string(output), "error", err)
-			return fmt.Errorf("failed to update Go module: %w", err)
-		}
-		logger.Debug("Updated Go module", "output", string(output))
-	}
-	return nil
-}
-
-func initGoModule(logger *log.Logger, pluginDir, pluginName string) error {
-	cmd := exec.Command("go", "mod", "init", fmt.Sprintf("github.com/ssotops/gitspace-plugins/%s", pluginName))
-	cmd.Dir = pluginDir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logger.Error("Failed to initialize Go module", "output", string(output), "error", err)
-		return fmt.Errorf("failed to initialize Go module: %w", err)
-	}
-	logger.Debug("Initialized Go module", "output", string(output))
-	return nil
-}
-
-func addDependencies(logger *log.Logger, pluginDir string) error {
-	dependencies := []string{
-		"github.com/charmbracelet/huh",
-		"github.com/charmbracelet/log",
-		"github.com/ssotops/gitspace@latest",
-	}
-
-	for _, dep := range dependencies {
-		cmd := exec.Command("go", "get", dep)
-		cmd.Dir = pluginDir
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			logger.Error("Failed to add dependency", "dependency", dep, "output", string(output), "error", err)
-			// Continue with other dependencies instead of returning immediately
-			continue
-		}
-		logger.Debug("Added dependency", "dependency", dep, "output", string(output))
-	}
-
-	// Run go mod tidy to clean up dependencies
-	cmd := exec.Command("go", "mod", "tidy")
-	cmd.Dir = pluginDir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logger.Error("Failed to tidy module", "output", string(output), "error", err)
-		return fmt.Errorf("failed to tidy module: %w", err)
-	}
-	logger.Debug("Module tidied", "output", string(output))
-	return nil
-}
-
-func testPlugin(name string, logger *log.Logger) {
-	plugins, err := loadAllPlugins(logger)
-	if err != nil {
-		logger.Error("Failed to load plugins", "error", err)
-		os.Exit(1)
-	}
-
-	var targetPlugin gitspace_plugin.GitspacePlugin
-	for _, p := range plugins {
-		if p.Name() == name {
-			targetPlugin = p
-			break
-		}
-	}
-
-	if targetPlugin == nil {
-		logger.Error("Plugin not found", "name", name)
-		os.Exit(1)
-	}
-
-	logger.Info("Testing plugin", "name", name)
-	err = targetPlugin.Run(logger)
-	if err != nil {
-		logger.Error("Plugin test failed", "name", name, "error", err)
-		os.Exit(1)
-	}
-
-	logger.Info("Plugin test completed successfully", "name", name)
-}
-
-func loadPluginWithTimeout(pluginPath string, timeout time.Duration) (gitspace_plugin.GitspacePlugin, error) {
-	resultChan := make(chan struct {
-		plugin gitspace_plugin.GitspacePlugin
-		err    error
-	})
-
-	go func() {
-		plugin, err := loadPlugin(pluginPath)
-		resultChan <- struct {
-			plugin gitspace_plugin.GitspacePlugin
-			err    error
-		}{plugin, err}
-	}()
-
-	select {
-	case result := <-resultChan:
-		return result.plugin, result.err
-	case <-time.After(timeout):
-		return nil, fmt.Errorf("plugin loading timed out after %v. This might be due to dependency issues or a build problem", timeout)
-	}
 }

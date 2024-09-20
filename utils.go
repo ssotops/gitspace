@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/charmbracelet/log"
@@ -58,21 +60,35 @@ func copyDir(src string, dst string) error {
 }
 
 func copyFile(src, dst string) error {
-	// Ensure the destination directory exists
-	dstDir := filepath.Dir(dst)
-	if err := os.MkdirAll(dstDir, 0755); err != nil {
-		return fmt.Errorf("failed to create destination directory: %w", err)
-	}
-
-	input, err := os.ReadFile(src)
+	sourceFileStat, err := os.Stat(src)
 	if err != nil {
-		return fmt.Errorf("failed to read source file: %w", err)
+		return err
 	}
 
-	err = os.WriteFile(dst, input, 0644)
+	if !sourceFileStat.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", src)
+	}
+
+	source, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to write destination file: %w", err)
+		return err
 	}
+	defer source.Close()
 
+	destination, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	_, err = io.Copy(destination, source)
+	return err
+}
+func gitClone(url, destPath string) error {
+	cmd := exec.Command("git", "clone", url, destPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git clone failed: %w\nOutput: %s", err, output)
+	}
 	return nil
 }
