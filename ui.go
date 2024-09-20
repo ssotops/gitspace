@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -75,10 +76,12 @@ func handleMainMenu(logger *log.Logger, config **Config, plugins []gitspace_plug
 		huh.NewOption("Quit", "quit"),
 	}
 
-	// Add plugin options to the main menu
-	for _, p := range plugins {
-		if menuOption := p.GetMenuOption(); menuOption != nil {
-			options = append(options, *menuOption)
+	// Add plugin options to the main menu only if plugins are available
+	if len(plugins) > 0 {
+		for _, p := range plugins {
+			if menuOption := p.GetMenuOption(); menuOption != nil {
+				options = append(options, *menuOption)
+			}
 		}
 	}
 
@@ -128,40 +131,27 @@ func handleMainMenu(logger *log.Logger, config **Config, plugins []gitspace_plug
 }
 
 func loadAllPlugins(logger *log.Logger) ([]gitspace_plugin.GitspacePlugin, error) {
-
 	pluginsDir, err := getPluginsDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get plugins directory: %w", err)
+		logger.Warn("Failed to get plugins directory", "error", err)
+		return nil, nil // Return empty slice instead of error
 	}
 
 	var plugins []gitspace_plugin.GitspacePlugin
 
 	entries, err := os.ReadDir(pluginsDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read plugins directory: %w", err)
+		logger.Warn("Failed to read plugins directory", "error", err)
+		return nil, nil // Return empty slice instead of error
 	}
 
 	for _, entry := range entries {
 		if entry.IsDir() {
 			pluginPath := filepath.Join(pluginsDir, entry.Name(), entry.Name()+".so")
-			plugin, err := loadPlugin(pluginPath)
+			plugin, err := loadPluginWithTimeout(pluginPath, 10*time.Second)
 			if err != nil {
 				logger.Warn("Failed to load plugin", "name", entry.Name(), "error", err)
-				continue
-			}
-
-			// Load and parse gitspace-plugin.toml
-			configPath := filepath.Join(pluginsDir, entry.Name(), "gitspace-plugin.toml")
-			var config PluginConfig
-			configData, err := os.ReadFile(configPath)
-			if err != nil {
-				logger.Warn("Failed to read plugin config file", "name", entry.Name(), "error", err)
-			} else {
-				if err := toml.Unmarshal(configData, &config); err != nil {
-					logger.Warn("Failed to parse plugin config", "name", entry.Name(), "error", err)
-				} else if configurable, ok := plugin.(interface{ SetConfig(PluginConfig) }); ok {
-					configurable.SetConfig(config)
-				}
+				continue // Skip this plugin and continue with others
 			}
 
 			plugins = append(plugins, plugin)

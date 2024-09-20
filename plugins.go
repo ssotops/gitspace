@@ -242,8 +242,50 @@ func installFromGitspaceCatalog(logger *log.Logger, catalogItem string) error {
 	return nil
 }
 
-func loadPlugin(pluginPath string) (GitspacePlugin, error) {
-	return gitspace_plugin.LoadPluginWithConfig(pluginPath)
+func loadPlugin(pluginPath string) (gitspace_plugin.GitspacePlugin, error) {
+	plugin, err := gitspace_plugin.LoadPluginWithConfig(pluginPath)
+	if err != nil {
+		// If loading fails, attempt to rebuild the plugin
+		rebuildErr := rebuildPlugin(pluginPath)
+		if rebuildErr != nil {
+			return nil, fmt.Errorf("failed to load plugin and rebuild failed: %w", rebuildErr)
+		}
+
+		// Try loading the plugin again after rebuilding
+		plugin, err = gitspace_plugin.LoadPluginWithConfig(pluginPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load plugin after rebuild: %w", err)
+		}
+	}
+
+	return plugin, nil
+}
+
+func rebuildPlugin(pluginPath string) error {
+    pluginDir := filepath.Dir(pluginPath)
+    
+    // Update go.mod to use the latest version of gitspace-plugin
+    cmd := exec.Command("go", "get", "-u", "github.com/ssotops/gitspace-plugin@latest")
+    cmd.Dir = pluginDir
+    if output, err := cmd.CombinedOutput(); err != nil {
+        return fmt.Errorf("failed to update gitspace-plugin: %w\nOutput: %s", err, output)
+    }
+    
+    // Run go mod tidy
+    cmd = exec.Command("go", "mod", "tidy")
+    cmd.Dir = pluginDir
+    if output, err := cmd.CombinedOutput(); err != nil {
+        return fmt.Errorf("failed to tidy go.mod: %w\nOutput: %s", err, output)
+    }
+    
+    // Rebuild the plugin
+    cmd = exec.Command("go", "build", "-buildmode=plugin", "-o", pluginPath)
+    cmd.Dir = pluginDir
+    if output, err := cmd.CombinedOutput(); err != nil {
+        return fmt.Errorf("failed to rebuild plugin: %w\nOutput: %s", err, output)
+    }
+    
+    return nil
 }
 
 func downloadFile(url string, filepath string) error {
@@ -689,3 +731,26 @@ func testPlugin(name string, logger *log.Logger) {
 
 	logger.Info("Plugin test completed successfully", "name", name)
 }
+
+func loadPluginWithTimeout(pluginPath string, timeout time.Duration) (gitspace_plugin.GitspacePlugin, error) {
+    resultChan := make(chan struct {
+        plugin gitspace_plugin.GitspacePlugin
+        err    error
+    })
+
+    go func() {
+        plugin, err := loadPlugin(pluginPath)
+        resultChan <- struct {
+            plugin gitspace_plugin.GitspacePlugin
+            err    error
+        }{plugin, err}
+    }()
+
+    select {
+    case result := <-resultChan:
+        return result.plugin, result.err
+    case <-time.After(timeout):
+        return nil, fmt.Errorf("plugin loading timed out after %v", timeout)
+    }
+}
+

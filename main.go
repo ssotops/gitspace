@@ -59,7 +59,7 @@ func main() {
 	}
 	logger.Debug("Config loaded successfully", "config_path", config.Global.Path)
 
-	plugins, err := loadAllPlugins(logger)
+	plugins, _ := loadAllPlugins(logger)
 	if err != nil {
 		logger.Error("Error loading plugins", "error", err)
 	}
