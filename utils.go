@@ -82,8 +82,13 @@ func copyFile(src, dst string) error {
 	defer destination.Close()
 
 	_, err = io.Copy(destination, source)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return os.Chmod(dst, sourceFileStat.Mode())
 }
+
 func gitClone(url, destPath string) error {
 	cmd := exec.Command("git", "clone", url, destPath)
 	output, err := cmd.CombinedOutput()

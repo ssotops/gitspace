@@ -143,15 +143,9 @@ func installPlugin(logger *log.Logger, source string) error {
 	}
 
 	// Copy the plugin source files
-	logger.Debug("Copying plugin source files", "sourceDir", sourceDir)
-	for _, source := range manifest.Sources {
-		sourcePath := filepath.Join(sourceDir, source.Path)
-		destPath := filepath.Join(pluginDir, source.Path)
-
-		logger.Debug("Copying file", "from", sourcePath, "to", destPath)
-		if err := copyFile(sourcePath, destPath); err != nil {
-			return fmt.Errorf("failed to copy plugin file %s: %w", source.Path, err)
-		}
+	logger.Debug("Copying plugin directory", "from", sourceDir, "to", pluginDir)
+	if err := copyDir(sourceDir, pluginDir); err != nil {
+		return fmt.Errorf("failed to copy plugin directory: %w", err)
 	}
 
 	logger.Info("Plugin installed successfully", "name", manifest.Metadata.Name, "path", pluginDir)

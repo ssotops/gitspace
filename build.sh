@@ -73,7 +73,7 @@ if ! command -v gum &> /dev/null; then
     fi
 fi
 
-# Function to update gitspace-plugin version
+# Function to update gitspace-plugin version for main project
 update_gitspace_plugin() {
     local dir=$1
     cd "$dir"
@@ -88,6 +88,27 @@ update_gitspace_plugin() {
     
     go get -u "github.com/ssotops/gitspace-plugin@$latest_version"
     go mod tidy
+    cd -
+}
+
+# Function to update gitspace-plugin version for plugins
+update_plugin_gitspace_plugin() {
+    local dir=$1
+    local version=$2
+    cd "$dir"
+    
+    gum style \
+        --foreground 208 --border-foreground 208 --border normal \
+        --align center --width 70 --margin "1 2" --padding "1 2" \
+        "Updating gitspace-plugin to version: $version in $dir"
+    
+    # Update go.mod file if it exists
+    if [ -f "go.mod" ]; then
+        sed -i '' "s|github.com/ssotops/gitspace-plugin v.*|github.com/ssotops/gitspace-plugin $version|g" go.mod
+        go mod tidy
+    else
+        echo "No go.mod file found in $dir. Skipping update."
+    fi
     cd -
 }
 
@@ -111,18 +132,11 @@ update_charm_versions() {
 update_charm_versions .
 update_gitspace_plugin .
 
-# Force update gitspace-plugin to the latest version
-gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
+# Force update gitspace-plugin to the latest version in main project
+gum spin --spinner dot --title "Updating gitspace-plugin in main project..." -- bash -c '
     go get -u github.com/ssotops/gitspace-plugin@latest
     go mod tidy
 '
-
-# gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
-#     go clean -modcache
-#     go get -u github.com/ssotops/gitspace-plugin@latest
-#     go mod tidy
-#     go mod download
-# '
 
 # Ensure we're using the latest version
 latest_version=$(go list -m -json github.com/ssotops/gitspace-plugin | jq -r .Version)
@@ -150,7 +164,7 @@ gum style \
 plugins_dir="$HOME/.ssot/gitspace/plugins"
 for plugin_dir in "$plugins_dir"/*; do
     if [ -d "$plugin_dir" ]; then
-        update_gitspace_plugin "$plugin_dir"
+        update_plugin_gitspace_plugin "$plugin_dir" "$latest_version"
     fi
 done
 
