@@ -14,11 +14,10 @@ import (
 
 type Config struct {
 	Global struct {
-		Path                   string   `toml:"path"`
-		Labels                 []string `toml:"labels"`
-		SCM                    string   `toml:"scm"`
-		Owner                  string   `toml:"owner"`
-		EmptyRepoInitialBranch string   `toml:"empty_repo_initial_branch"`
+		Path                   string `toml:"path"`
+		SCM                    string `toml:"scm"`
+		Owner                  string `toml:"owner"`
+		EmptyRepoInitialBranch string `toml:"empty_repo_initial_branch"`
 	} `toml:"global"`
 	Auth struct {
 		Type    string `toml:"type"`
@@ -31,7 +30,6 @@ type Group struct {
 	Match  string   `toml:"match"`
 	Values []string `toml:"values"`
 	Type   string   `toml:"type,omitempty"`
-	Labels []string `toml:"labels,omitempty"`
 }
 
 func getSSHKeyPath(configPath string) (string, error) {

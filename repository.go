@@ -301,14 +301,6 @@ func updateIndexTOML(logger *log.Logger, config *Config, repoResults map[string]
 		url := fmt.Sprintf("https://%s/%s/%s", config.Global.SCM, config.Global.Owner, repo)
 		metadata["url"] = url
 
-		// Set labels (lowercase)
-		labels := getRepoLabels(config, repo)
-		lowercaseLabels := make([]string, len(labels))
-		for i, label := range labels {
-			lowercaseLabels[i] = strings.ToLower(label)
-		}
-		metadata["labels"] = lowercaseLabels
-
 		repoData["metadata"] = metadata
 		repos[repo] = repoData
 	}
@@ -454,21 +446,6 @@ func getRepoType(config *Config, repo string) string {
 	return "default"
 }
 
-func getRepoLabels(config *Config, repo string) []string {
-	var labels []string
-	labels = append(labels, config.Global.Labels...)
-
-	for _, group := range config.Groups {
-		if matchesFilter(repo, group) {
-			fmt.Printf("DEBUG: Adding labels %v for repo '%s' from group %+v\n", group.Labels, repo, group)
-			labels = append(labels, group.Labels...)
-		}
-	}
-
-	fmt.Printf("DEBUG: Final labels for repo '%s': %v\n", repo, labels)
-	return removeDuplicates(labels)
-}
-
 func filterRepositories(repos []string, config *Config) []string {
 	var filtered []string
 
@@ -489,36 +466,6 @@ func filterRepositories(repos []string, config *Config) []string {
 
 	fmt.Printf("DEBUG: Filtered repositories: %v\n", filtered)
 	return filtered
-}
-
-func matchesGroup(repo string, group Group) bool {
-	switch group.Match {
-	case "startsWith":
-		for _, value := range group.Values {
-			if strings.HasPrefix(repo, value) {
-				return true
-			}
-		}
-	case "endsWith":
-		for _, value := range group.Values {
-			if strings.HasSuffix(repo, value) {
-				return true
-			}
-		}
-	case "includes":
-		for _, value := range group.Values {
-			if strings.Contains(repo, value) {
-				return true
-			}
-		}
-	case "isExactly":
-		for _, value := range group.Values {
-			if repo == value {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func matchesFilter(repo string, group Group) bool {

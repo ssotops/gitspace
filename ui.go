@@ -4,12 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
-	gitspace_plugin "github.com/ssotops/gitspace-plugin"
 )
 
 func printWelcomeMessage() {
@@ -30,57 +28,13 @@ func printWelcomeMessage() {
 	fmt.Println()
 }
 
-func showMainMenu(plugins []gitspace_plugin.GitspacePlugin) string {
-	var choice string
+func handleMainMenu(logger *log.Logger, config **Config) bool {
 	options := []huh.Option[string]{
 		huh.NewOption("Repositories", "repositories"),
 		huh.NewOption("Symlinks", "symlinks"),
-		huh.NewOption("Sync Labels", "sync"),
 		huh.NewOption("Plugins", "plugins"),
 		huh.NewOption("Gitspace", "gitspace"),
 		huh.NewOption("Quit", "quit"),
-	}
-
-	// Add plugin options to the main menu
-	for _, p := range plugins {
-		if menuOption := p.GetMenuOption(); menuOption != nil {
-			options = append(options, *menuOption)
-		}
-	}
-
-	err := huh.NewSelect[string]().
-		Title("Choose an action").
-		Options(options...).
-		Value(&choice).
-		Run()
-
-	if err != nil {
-		if err == huh.ErrUserAborted {
-			return "" // Return empty string on CTRL+C
-		}
-		fmt.Println("Error getting user choice:", err)
-		return ""
-	}
-
-	return choice
-}
-
-func handleMainMenu(logger *log.Logger, config **Config, pluginLoader *PluginLoader) bool {
-	options := []huh.Option[string]{
-		huh.NewOption("Repositories", "repositories"),
-		huh.NewOption("Symlinks", "symlinks"),
-		huh.NewOption("Sync Labels", "sync"),
-		huh.NewOption("Plugins", "plugins"),
-		huh.NewOption("Gitspace", "gitspace"),
-		huh.NewOption("Quit", "quit"),
-	}
-
-	if pluginLoader.IsLoadingDone() {
-		for _, p := range pluginLoader.GetPlugins() {
-			if menuOption := p.GetMenuOption(); menuOption != nil {
-				options = append(options, *menuOption)
-			}
-		}
 	}
 
 	var choice string
@@ -100,15 +54,9 @@ func handleMainMenu(logger *log.Logger, config **Config, pluginLoader *PluginLoa
 
 	switch choice {
 	case "plugins":
-		// if !pluginLoader.IsLoadingDone() {
-		// 	logger.Info("Plugins are still loading. Please wait a moment and try again.")
-		// } else {
 		handlePluginsCommand(logger, *config)
-		// }
 	case "repositories":
 		return handleRepositoriesCommand(logger, *config)
-	case "sync":
-		syncLabels(logger, *config)
 	case "gitspace":
 		handleGitspaceCommand(logger, config)
 	case "symlinks":
@@ -116,55 +64,10 @@ func handleMainMenu(logger *log.Logger, config **Config, pluginLoader *PluginLoa
 	case "quit":
 		return true
 	default:
-		// Check if the choice matches a plugin
-		if pluginLoader.IsLoadingDone() {
-			for _, p := range pluginLoader.GetPlugins() {
-				if menuOption := p.GetMenuOption(); menuOption != nil && menuOption.Value == choice {
-					err := p.Run(logger)
-					if err != nil {
-						logger.Error("Failed to run plugin", "name", p.Name(), "error", err)
-					}
-					return false
-				}
-			}
-		}
 		logger.Error("Invalid choice")
 	}
 
 	return false
-}
-
-func loadAllPlugins(logger *log.Logger) ([]gitspace_plugin.GitspacePlugin, error) {
-	pluginsDir, err := getPluginsDir()
-	if err != nil {
-		logger.Warn("Failed to get plugins directory", "error", err)
-		return nil, nil // Return empty slice instead of error
-	}
-
-	var plugins []gitspace_plugin.GitspacePlugin
-
-	entries, err := os.ReadDir(pluginsDir)
-	if err != nil {
-		logger.Warn("Failed to read plugins directory", "error", err)
-		return nil, nil // Return empty slice instead of error
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			pluginPath := filepath.Join(pluginsDir, entry.Name(), entry.Name()+".so")
-
-			plugin, err := loadPluginWithTimeout(pluginPath, 30*time.Second) // Increase timeout to 30 seconds
-			if err != nil {
-				logger.Warn("Failed to load plugin", "name", entry.Name(), "error", err)
-				continue // Skip this plugin and continue with others
-			}
-
-			plugins = append(plugins, plugin)
-			logger.Info("Plugin loaded successfully", "name", plugin.Name(), "version", plugin.Version())
-		}
-	}
-
-	return plugins, nil
 }
 
 func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
@@ -290,58 +193,6 @@ func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir s
 }
 
 func handleConfigPathsCommand(logger *log.Logger) {
-	cacheDir, err := getCacheDir()
-	if err != nil {
-		logger.Error("Error getting cache directory", "error", err)
-		return
-	}
-
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00FFFF"))
-	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
-	symlinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF"))
-
-	fmt.Println(titleStyle.Render("\n📂 Cache Directory:"))
-	fmt.Printf("   %s\n\n", pathStyle.Render(fmt.Sprintf("cd %s", cacheDir)))
-
-	fmt.Println(titleStyle.Render("📄 Gitspace Config Files:"))
-	err = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && filepath.Ext(path) == ".toml" {
-			fmt.Printf("   %s\n", pathStyle.Render(path))
-		}
-		return nil
-	})
-	if err != nil {
-		logger.Error("Error walking through cache directory", "error", err)
-	}
-
-	fmt.Println(titleStyle.Render("\n🔗 Gitspace Config Symlinks:"))
-	err = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			realPath, err := os.Readlink(path)
-			if err != nil {
-				logger.Error("Error reading symlink", "path", path, "error", err)
-				return nil
-			}
-			if filepath.Ext(realPath) == ".toml" {
-				fmt.Printf("   %s -> %s\n", symlinkStyle.Render(path), pathStyle.Render(realPath))
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		logger.Error("Error walking through cache directory for symlinks", "error", err)
-	}
-
-	fmt.Println() // Add an extra newline for spacing
-}
-
-func handleConfigCommand(logger *log.Logger) {
 	cacheDir, err := getCacheDir()
 	if err != nil {
 		logger.Error("Error getting cache directory", "error", err)
@@ -519,6 +370,7 @@ func ensureConfig(logger *log.Logger, config **Config) bool {
 	return true
 }
 
+// Plugin-related functions that use huh for rendering sub-menus
 func handlePluginsCommand(logger *log.Logger, config *Config) {
 	for {
 		var subChoice string
@@ -528,7 +380,6 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 				huh.NewOption("Install Plugin", "install"),
 				huh.NewOption("Uninstall Plugin", "uninstall"),
 				huh.NewOption("Print Installed Plugins", "print"),
-				huh.NewOption("Run Plugin", "run"),
 				huh.NewOption("Go back", "back"),
 			).
 			Value(&subChoice).
@@ -546,8 +397,6 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 			handleUninstallPlugin(logger)
 		case "print":
 			handlePrintInstalledPlugins(logger)
-		case "run":
-			handleRunPlugin(logger)
 		case "back":
 			return
 		default:
@@ -599,66 +448,6 @@ func handleInstallPlugin(logger *log.Logger) {
 	}
 }
 
-func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
-	owner := "ssotops"
-	repo := "gitspace-catalog"
-	catalog, err := fetchGitspaceCatalog(owner, repo)
-	if err != nil {
-		logger.Error("Failed to fetch Gitspace Catalog", "error", err)
-		return "", err
-	}
-
-	var options []huh.Option[string]
-	for name := range catalog.Plugins {
-		options = append(options, huh.NewOption(name, "catalog://"+name))
-	}
-
-	if len(options) == 0 {
-		return "", fmt.Errorf("no plugins found in the catalog")
-	}
-
-	var selectedItem string
-	err = huh.NewSelect[string]().
-		Title("Select a plugin to install").
-		Options(options...).
-		Value(&selectedItem).
-		Run()
-
-	if err != nil {
-		return "", fmt.Errorf("failed to select item: %w", err)
-	}
-
-	return selectedItem, nil
-}
-
-func handleUninstallPlugin(logger *log.Logger) {
-	pluginName, err := selectInstalledPlugin(logger, "Select a plugin to uninstall")
-	if err != nil {
-		logger.Error("Error selecting plugin to uninstall", "error", err)
-		return
-	}
-	err = uninstallPlugin(logger, pluginName)
-	if err != nil {
-		logger.Error("Failed to uninstall plugin", "error", err)
-	} else {
-		logger.Info("Plugin uninstalled successfully", "plugin", pluginName)
-	}
-}
-
-func handlePrintInstalledPlugins(logger *log.Logger) {
-	err := printInstalledPlugins(logger)
-	if err != nil {
-		logger.Error("Failed to print installed plugins", "error", err)
-	}
-}
-
-func handleRunPlugin(logger *log.Logger) {
-	err := runPlugin(logger)
-	if err != nil {
-		logger.Error("Failed to run plugin", "error", err)
-	}
-}
-
 func selectInstalledPlugin(logger *log.Logger, prompt string) (string, error) {
 	pluginsDir, err := getPluginsDir()
 	if err != nil {
@@ -686,4 +475,25 @@ func selectInstalledPlugin(logger *log.Logger, prompt string) (string, error) {
 	}
 
 	return selectedPlugin, nil
+}
+
+func handleUninstallPlugin(logger *log.Logger) {
+	pluginName, err := selectInstalledPlugin(logger, "Select a plugin to uninstall")
+	if err != nil {
+		logger.Error("Error selecting plugin to uninstall", "error", err)
+		return
+	}
+	err = uninstallPlugin(logger, pluginName)
+	if err != nil {
+		logger.Error("Failed to uninstall plugin", "error", err)
+	} else {
+		logger.Info("Plugin uninstalled successfully", "plugin", pluginName)
+	}
+}
+
+func handlePrintInstalledPlugins(logger *log.Logger) {
+	err := printInstalledPlugins(logger)
+	if err != nil {
+		logger.Error("Failed to print installed plugins", "error", err)
+	}
 }
