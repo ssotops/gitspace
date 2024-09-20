@@ -129,7 +129,7 @@ func initLogger() *log.Logger {
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
-		Level:           log.InfoLevel,
+		Level:           log.DebugLevel,
 	})
 	logger.Debug("Logger initialized with Debug level")
 	return logger

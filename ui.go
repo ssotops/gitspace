@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
-	"github.com/ssotops/gitspace-plugin"
+	gitspace_plugin "github.com/ssotops/gitspace-plugin"
 )
 
 func printWelcomeMessage() {
@@ -81,8 +81,6 @@ func handleMainMenu(logger *log.Logger, config **Config, pluginLoader *PluginLoa
 				options = append(options, *menuOption)
 			}
 		}
-	} else {
-		options = append(options, huh.NewOption("Plugins (Loading...)", "plugins_loading"))
 	}
 
 	var choice string
@@ -101,10 +99,12 @@ func handleMainMenu(logger *log.Logger, config **Config, pluginLoader *PluginLoa
 	}
 
 	switch choice {
-	case "plugins_loading":
-		logger.Info("Plugins are still loading. Please wait and try again.")
 	case "plugins":
+		// if !pluginLoader.IsLoadingDone() {
+		// 	logger.Info("Plugins are still loading. Please wait a moment and try again.")
+		// } else {
 		handlePluginsCommand(logger, *config)
+		// }
 	case "repositories":
 		return handleRepositoriesCommand(logger, *config)
 	case "sync":

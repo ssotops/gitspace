@@ -10,12 +10,12 @@ import (
 	"plugin"
 	"runtime"
 	"strings"
-  "time"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
 	"github.com/pelletier/go-toml/v2"
-	"github.com/ssotops/gitspace-plugin"
+	gitspace_plugin "github.com/ssotops/gitspace-plugin"
 	"github.com/ssotops/gitspace/lib"
 )
 
@@ -263,30 +263,30 @@ func loadPlugin(pluginPath string) (gitspace_plugin.GitspacePlugin, error) {
 }
 
 func rebuildPlugin(pluginPath string) error {
-    pluginDir := filepath.Dir(pluginPath)
-    
-    // Update go.mod to use the latest version of gitspace-plugin
-    cmd := exec.Command("go", "get", "-u", "github.com/ssotops/gitspace-plugin@latest")
-    cmd.Dir = pluginDir
-    if output, err := cmd.CombinedOutput(); err != nil {
-        return fmt.Errorf("failed to update gitspace-plugin: %w\nOutput: %s", err, output)
-    }
-    
-    // Run go mod tidy
-    cmd = exec.Command("go", "mod", "tidy")
-    cmd.Dir = pluginDir
-    if output, err := cmd.CombinedOutput(); err != nil {
-        return fmt.Errorf("failed to tidy go.mod: %w\nOutput: %s", err, output)
-    }
-    
-    // Rebuild the plugin
-    cmd = exec.Command("go", "build", "-buildmode=plugin", "-o", pluginPath)
-    cmd.Dir = pluginDir
-    if output, err := cmd.CombinedOutput(); err != nil {
-        return fmt.Errorf("failed to rebuild plugin: %w\nOutput: %s", err, output)
-    }
-    
-    return nil
+	pluginDir := filepath.Dir(pluginPath)
+
+	// Update go.mod to use the latest version of gitspace-plugin
+	cmd := exec.Command("go", "get", "-u", "github.com/ssotops/gitspace-plugin@latest")
+	cmd.Dir = pluginDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to update gitspace-plugin: %w\nOutput: %s", err, output)
+	}
+
+	// Run go mod tidy
+	cmd = exec.Command("go", "mod", "tidy")
+	cmd.Dir = pluginDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to tidy go.mod: %w\nOutput: %s", err, output)
+	}
+
+	// Rebuild the plugin
+	cmd = exec.Command("go", "build", "-buildmode=plugin", "-o", pluginPath)
+	cmd.Dir = pluginDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to rebuild plugin: %w\nOutput: %s", err, output)
+	}
+
+	return nil
 }
 
 func downloadFile(url string, filepath string) error {
@@ -696,10 +696,9 @@ func addDependencies(logger *log.Logger, pluginDir string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		logger.Error("Failed to tidy module", "output", string(output), "error", err)
-		return fmt.Errorf("failed to tidy module: %w", err)
+    return fmt.Errorf("failed to tidy module: %w", err)
 	}
 	logger.Debug("Module tidied", "output", string(output))
-
 	return nil
 }
 
@@ -734,24 +733,23 @@ func testPlugin(name string, logger *log.Logger) {
 }
 
 func loadPluginWithTimeout(pluginPath string, timeout time.Duration) (gitspace_plugin.GitspacePlugin, error) {
-    resultChan := make(chan struct {
-        plugin gitspace_plugin.GitspacePlugin
-        err    error
-    })
+	resultChan := make(chan struct {
+		plugin gitspace_plugin.GitspacePlugin
+		err    error
+	})
 
-    go func() {
-        plugin, err := loadPlugin(pluginPath)
-        resultChan <- struct {
-            plugin gitspace_plugin.GitspacePlugin
-            err    error
-        }{plugin, err}
-    }()
+	go func() {
+		plugin, err := loadPlugin(pluginPath)
+		resultChan <- struct {
+			plugin gitspace_plugin.GitspacePlugin
+			err    error
+		}{plugin, err}
+	}()
 
-    select {
-    case result := <-resultChan:
-        return result.plugin, result.err
-    case <-time.After(timeout):
-        return nil, fmt.Errorf("plugin loading timed out after %v", timeout)
-    }
+	select {
+	case result := <-resultChan:
+		return result.plugin, result.err
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("plugin loading timed out after %v. This might be due to dependency issues or a build problem", timeout)
+	}
 }
-
