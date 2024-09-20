@@ -380,6 +380,7 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 				huh.NewOption("Install Plugin", "install"),
 				huh.NewOption("Uninstall Plugin", "uninstall"),
 				huh.NewOption("Print Installed Plugins", "print"),
+				huh.NewOption("Run Plugin", "run"), // Add this line
 				huh.NewOption("Go back", "back"),
 			).
 			Value(&subChoice).
@@ -397,6 +398,8 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 			handleUninstallPlugin(logger)
 		case "print":
 			handlePrintInstalledPlugins(logger)
+		case "run":
+			handleRunPlugin(logger) // Add this line
 		case "back":
 			return
 		default:
@@ -495,5 +498,18 @@ func handlePrintInstalledPlugins(logger *log.Logger) {
 	err := printInstalledPlugins(logger)
 	if err != nil {
 		logger.Error("Failed to print installed plugins", "error", err)
+	}
+}
+
+func handleRunPlugin(logger *log.Logger) {
+	pluginName, err := selectInstalledPlugin(logger, "Select a plugin to run")
+	if err != nil {
+		logger.Error("Error selecting plugin to run", "error", err)
+		return
+	}
+
+	err = runPlugin(logger, pluginName)
+	if err != nil {
+		logger.Error("Failed to run plugin", "error", err)
 	}
 }
