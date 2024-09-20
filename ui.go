@@ -57,8 +57,6 @@ func handleMainMenu(logger *log.Logger, config **Config) bool {
 		handlePluginsCommand(logger, *config)
 	case "repositories":
 		return handleRepositoriesCommand(logger, *config)
-	case "sync":
-		syncLabels(logger, *config)
 	case "gitspace":
 		handleGitspaceCommand(logger, config)
 	case "symlinks":
