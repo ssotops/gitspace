@@ -1,9 +1,10 @@
+// In gitspace/dependencies.go
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"os/exec"
+	"bytes"
 )
 
 func GetCurrentDependencies() (map[string]string, error) {
