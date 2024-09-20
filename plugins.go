@@ -42,6 +42,9 @@ func getPluginsDir() (string, error) {
 func installPlugin(logger *log.Logger, source string) error {
 	logger.Debug("Starting plugin installation", "source", source)
 
+	// Trim any leading or trailing whitespace
+	source = strings.TrimSpace(source)
+
 	pluginsDir, err := getPluginsDir()
 	if err != nil {
 		return fmt.Errorf("failed to get plugins directory: %w", err)
@@ -83,19 +86,25 @@ func installPlugin(logger *log.Logger, source string) error {
 		}
 		logger.Debug("Absolute source path", "path", absSource)
 
+		// Check if the directory exists
 		sourceInfo, err := os.Stat(absSource)
 		if err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("the specified path does not exist: %s", absSource)
+			}
 			return fmt.Errorf("failed to get source info: %w", err)
 		}
 
-		if sourceInfo.IsDir() {
-			manifestPath = filepath.Join(absSource, "gitspace-plugin.toml")
-			sourceDir = absSource
-		} else if filepath.Ext(absSource) == ".toml" {
-			manifestPath = absSource
-			sourceDir = filepath.Dir(absSource)
-		} else {
-			return fmt.Errorf("invalid source: must be a directory or .toml file")
+		if !sourceInfo.IsDir() {
+			return fmt.Errorf("the specified path is not a directory: %s", absSource)
+		}
+
+		manifestPath = filepath.Join(absSource, "gitspace-plugin.toml")
+		sourceDir = absSource
+
+		// Check if the manifest file exists
+		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+			return fmt.Errorf("gitspace-plugin.toml not found in the specified directory: %s", absSource)
 		}
 	}
 
@@ -104,10 +113,14 @@ func installPlugin(logger *log.Logger, source string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load manifest: %w", err)
 	}
-	logger.Debug("Loaded plugin manifest", "name", manifest.Plugin.Name)
+	logger.Debug("Loaded plugin manifest", "name", manifest.Metadata.Name)
+
+	if manifest.Metadata.Name == "" {
+		return fmt.Errorf("plugin name is empty in the manifest file")
+	}
 
 	// Create a directory for the plugin in the plugins directory
-	pluginDir := filepath.Join(pluginsDir, manifest.Plugin.Name)
+	pluginDir := filepath.Join(pluginsDir, manifest.Metadata.Name)
 	logger.Debug("Preparing plugin directory", "path", pluginDir)
 
 	// Remove existing plugin directory if it exists
@@ -129,7 +142,7 @@ func installPlugin(logger *log.Logger, source string) error {
 
 	// Copy the plugin source files
 	logger.Debug("Copying plugin source files", "sourceDir", sourceDir)
-	for _, source := range manifest.Plugin.Sources {
+	for _, source := range manifest.Sources {
 		sourcePath := filepath.Join(sourceDir, source.Path)
 		destPath := filepath.Join(pluginDir, source.Path)
 
@@ -143,7 +156,8 @@ func installPlugin(logger *log.Logger, source string) error {
 	goModPath := filepath.Join(pluginDir, "go.mod")
 	if _, err := os.Stat(goModPath); os.IsNotExist(err) {
 		logger.Debug("Creating go.mod file", "path", goModPath)
-		cmd := exec.Command("go", "mod", "init", fmt.Sprintf("github.com/ssotops/gitspace/plugins/%s", manifest.Plugin.Name))
+		modulePath := fmt.Sprintf("github.com/ssotops/gitspace/plugins/%s", manifest.Metadata.Name)
+		cmd := exec.Command("go", "mod", "init", modulePath)
 		cmd.Dir = pluginDir
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed to initialize go.mod: %w\nOutput: %s", err, output)
@@ -173,7 +187,7 @@ func installPlugin(logger *log.Logger, source string) error {
 		return fmt.Errorf("failed to build plugin: %w", err)
 	}
 
-	logger.Info("Plugin installed successfully", "name", manifest.Plugin.Name, "path", pluginDir)
+	logger.Info("Plugin installed successfully", "name", manifest.Metadata.Name, "path", pluginDir)
 	return nil
 }
 
@@ -321,6 +335,11 @@ func loadPluginManifest(path string) (*PluginManifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode manifest: %w", err)
 	}
+
+	if manifest.Metadata.Name == "" {
+		return nil, fmt.Errorf("plugin name is missing in the manifest file")
+	}
+
 	return &manifest, nil
 }
 
@@ -696,7 +715,7 @@ func addDependencies(logger *log.Logger, pluginDir string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		logger.Error("Failed to tidy module", "output", string(output), "error", err)
-    return fmt.Errorf("failed to tidy module: %w", err)
+		return fmt.Errorf("failed to tidy module: %w", err)
 	}
 	logger.Debug("Module tidied", "output", string(output))
 	return nil

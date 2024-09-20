@@ -94,6 +94,6 @@ func getPathWithCompletion(prompt string) (string, error) {
 		return "", err
 	}
 
-	finalPath := finalModel.(pathCompletionModel).textInput.Value()
+	finalPath := strings.TrimSpace(finalModel.(pathCompletionModel).textInput.Value())
 	return finalPath, nil
 }

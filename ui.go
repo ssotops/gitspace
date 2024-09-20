@@ -577,7 +577,7 @@ func handleInstallPlugin(logger *log.Logger) {
 	case "catalog":
 		source, err = handleGitspaceCatalogInstall(logger)
 	case "local":
-		source, err = getPathWithCompletion("Enter the local plugin source (directory or .toml file)")
+		source, err = getPathWithCompletion("Enter the local plugin source (directory containing gitspace-plugin.toml)")
 	case "remote":
 		err = huh.NewInput().
 			Title("Enter the remote plugin URL").
