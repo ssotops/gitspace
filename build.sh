@@ -33,6 +33,33 @@ install_gum() {
     fi
 }
 
+# Function to install jq
+install_jq() {
+    echo "Installing jq..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        brew install jq
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        sudo apt-get update && sudo apt-get install -y jq
+    else
+        echo "Unsupported operating system. Please install jq manually:"
+        echo "https://stedolan.github.io/jq/download/"
+        exit 1
+    fi
+}
+
+# Check if jq is installed
+if ! command -v jq &> /dev/null; then
+    echo "jq is not installed."
+    read -p "Do you want to install jq? (y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        install_jq
+    else
+        echo "Please install jq manually and run this script again."
+        exit 1
+    fi
+fi
+
 # Check if gum is installed
 if ! command -v gum &> /dev/null; then
     echo "gum is not installed."
@@ -45,6 +72,24 @@ if ! command -v gum &> /dev/null; then
         exit 1
     fi
 fi
+
+# Function to update gitspace-plugin version
+update_gitspace_plugin() {
+    local dir=$1
+    cd "$dir"
+    
+    # Force-download the latest version
+    latest_version=$(curl -s https://api.github.com/repos/ssotops/gitspace-plugin/releases/latest | jq -r .tag_name)
+    
+    gum style \
+        --foreground 208 --border-foreground 208 --border normal \
+        --align center --width 70 --margin "1 2" --padding "1 2" \
+        "Updating gitspace-plugin to version: $latest_version in $dir"
+    
+    go get -u "github.com/ssotops/gitspace-plugin@$latest_version"
+    go mod tidy
+    cd -
+}
 
 # ASCII Art for gitspace builder using gum
 gum style \
@@ -64,24 +109,76 @@ update_charm_versions() {
 
 # Update main application
 update_charm_versions .
+update_gitspace_plugin .
 
-# Update gitspace-plugin to the latest version
+# Force update gitspace-plugin to the latest version
 gum spin --spinner dot --title "Updating gitspace-plugin..." -- bash -c '
+    go clean -modcache
     go get -u github.com/ssotops/gitspace-plugin@latest
     go mod tidy
     go mod download
 '
 
 # Ensure we're using the latest version
-latest_version=$(go list -m -f "{{.Version}}" github.com/ssotops/gitspace-plugin)
+latest_version=$(go list -m -json github.com/ssotops/gitspace-plugin | jq -r .Version)
+current_version=$(grep "github.com/ssotops/gitspace-plugin" go.mod | awk '{print $2}')
+
+if [ "$latest_version" != "$current_version" ]; then
+    gum style \
+        --foreground 208 --border-foreground 208 --border normal \
+        --align center --width 70 --margin "1 2" --padding "1 2" \
+        "Warning: gitspace-plugin version mismatch detected.
+Current: $current_version
+Latest: $latest_version
+Forcing update to the latest version..."
+    
+    go get -u github.com/ssotops/gitspace-plugin@$latest_version
+    go mod tidy
+fi
+
 gum style \
     --foreground 82 --border-foreground 82 --border normal \
     --align center --width 70 --margin "1 2" --padding "1 2" \
     "Using gitspace-plugin version: $latest_version"
 
+# Update plugins
+plugins_dir="$HOME/.ssot/gitspace/plugins"
+for plugin_dir in "$plugins_dir"/*; do
+    if [ -d "$plugin_dir" ]; then
+        update_gitspace_plugin "$plugin_dir"
+    fi
+done
+
 # Build main Gitspace application
 gum spin --spinner dot --title "Building Gitspace main application..." -- sleep 2
 CGO_ENABLED=1 go build -tags pluginload -buildmode=pie -o gitspace .
+
+# Rebuild plugins
+for plugin_dir in "$plugins_dir"/*; do
+    if [ -d "$plugin_dir" ]; then
+        plugin_name=$(basename "$plugin_dir")
+        gum spin --spinner dot --title "Rebuilding plugin: $plugin_name" -- bash -c "
+            cd '$plugin_dir'
+            go build -buildmode=plugin -o ${plugin_name}.so .
+        "
+    fi
+done
+
+# Verify versions
+main_version=$(grep "github.com/ssotops/gitspace-plugin" go.mod | awk '{print $2}')
+gum style \
+    --foreground 82 --border-foreground 82 --border normal \
+    --align center --width 70 --margin "1 2" --padding "1 2" \
+    "Main Gitspace using gitspace-plugin version: $main_version"
+
+echo "Plugin versions:"
+for plugin_dir in "$plugins_dir"/*; do
+    if [ -d "$plugin_dir" ]; then
+        plugin_name=$(basename "$plugin_dir")
+        plugin_version=$(grep "github.com/ssotops/gitspace-plugin" "$plugin_dir/go.mod" | awk '{print $2}')
+        echo "  $plugin_name: $plugin_version"
+    fi
+done
 
 # Print installed local plugins
 echo "Currently installed local plugins:"

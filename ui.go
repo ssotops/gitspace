@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
-	"github.com/pelletier/go-toml/v2"
 	"github.com/ssotops/gitspace-plugin"
 )
 
@@ -66,7 +65,7 @@ func showMainMenu(plugins []gitspace_plugin.GitspacePlugin) string {
 	return choice
 }
 
-func handleMainMenu(logger *log.Logger, config **Config, plugins []gitspace_plugin.GitspacePlugin) bool {
+func handleMainMenu(logger *log.Logger, config **Config, pluginLoader *PluginLoader) bool {
 	options := []huh.Option[string]{
 		huh.NewOption("Repositories", "repositories"),
 		huh.NewOption("Symlinks", "symlinks"),
@@ -76,13 +75,14 @@ func handleMainMenu(logger *log.Logger, config **Config, plugins []gitspace_plug
 		huh.NewOption("Quit", "quit"),
 	}
 
-	// Add plugin options to the main menu only if plugins are available
-	if len(plugins) > 0 {
-		for _, p := range plugins {
+	if pluginLoader.IsLoadingDone() {
+		for _, p := range pluginLoader.GetPlugins() {
 			if menuOption := p.GetMenuOption(); menuOption != nil {
 				options = append(options, *menuOption)
 			}
 		}
+	} else {
+		options = append(options, huh.NewOption("Plugins (Loading...)", "plugins_loading"))
 	}
 
 	var choice string
@@ -94,13 +94,17 @@ func handleMainMenu(logger *log.Logger, config **Config, plugins []gitspace_plug
 
 	if err != nil {
 		if err == huh.ErrUserAborted {
-			return true // Return true to quit on CTRL+C
+			return true
 		}
 		logger.Error("Error getting user choice", "error", err)
 		return false
 	}
 
 	switch choice {
+	case "plugins_loading":
+		logger.Info("Plugins are still loading. Please wait and try again.")
+	case "plugins":
+		handlePluginsCommand(logger, *config)
 	case "repositories":
 		return handleRepositoriesCommand(logger, *config)
 	case "sync":
@@ -109,19 +113,19 @@ func handleMainMenu(logger *log.Logger, config **Config, plugins []gitspace_plug
 		handleGitspaceCommand(logger, config)
 	case "symlinks":
 		handleSymlinksCommand(logger, *config)
-	case "plugins":
-		handlePluginsCommand(logger, *config)
 	case "quit":
 		return true
 	default:
 		// Check if the choice matches a plugin
-		for _, p := range plugins {
-			if menuOption := p.GetMenuOption(); menuOption != nil && menuOption.Value == choice {
-				err := p.Run(logger)
-				if err != nil {
-					logger.Error("Failed to run plugin", "name", p.Name(), "error", err)
+		if pluginLoader.IsLoadingDone() {
+			for _, p := range pluginLoader.GetPlugins() {
+				if menuOption := p.GetMenuOption(); menuOption != nil && menuOption.Value == choice {
+					err := p.Run(logger)
+					if err != nil {
+						logger.Error("Failed to run plugin", "name", p.Name(), "error", err)
+					}
+					return false
 				}
-				return false
 			}
 		}
 		logger.Error("Invalid choice")

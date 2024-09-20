@@ -5,11 +5,51 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/charmbracelet/log"
-	"github.com/ssotops/gitspace-plugin"
+	gitspace_plugin "github.com/ssotops/gitspace-plugin"
 )
+
+type PluginLoader struct {
+	plugins     []gitspace_plugin.GitspacePlugin
+	loadingDone bool
+	mu          sync.Mutex
+	logger      *log.Logger
+}
+
+func NewPluginLoader(logger *log.Logger) *PluginLoader {
+	return &PluginLoader{
+		logger: logger,
+	}
+}
+
+func (pl *PluginLoader) StartLoading() {
+	go func() {
+		plugins, err := loadAllPlugins(pl.logger)
+		pl.mu.Lock()
+		defer pl.mu.Unlock()
+		if err != nil {
+			pl.logger.Warn("Error loading plugins", "error", err)
+		} else {
+			pl.plugins = plugins
+		}
+		pl.loadingDone = true
+	}()
+}
+
+func (pl *PluginLoader) GetPlugins() []gitspace_plugin.GitspacePlugin {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+	return pl.plugins
+}
+
+func (pl *PluginLoader) IsLoadingDone() bool {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+	return pl.loadingDone
+}
 
 func main() {
 	testMode := flag.Bool("test-plugin", false, "Run in plugin test mode")
@@ -59,10 +99,8 @@ func main() {
 	}
 	logger.Debug("Config loaded successfully", "config_path", config.Global.Path)
 
-	plugins, _ := loadAllPlugins(logger)
-	if err != nil {
-		logger.Error("Error loading plugins", "error", err)
-	}
+	pluginLoader := NewPluginLoader(logger)
+	pluginLoader.StartLoading()
 
 	for {
 		select {
@@ -71,7 +109,7 @@ func main() {
 			return
 		default:
 			printConfigPath(config)
-			if handleMainMenu(logger, &config, plugins) {
+			if handleMainMenu(logger, &config, pluginLoader) {
 				logger.Info("User chose to quit. Exiting Gitspace...")
 				return
 			}
