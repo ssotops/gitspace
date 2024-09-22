@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
+	"github.com/ssotops/gitspace/plugin"
 )
 
 func printWelcomeMessage() {
@@ -28,7 +29,7 @@ func printWelcomeMessage() {
 	fmt.Println()
 }
 
-func handleMainMenu(logger *log.Logger, config **Config) bool {
+func handleMainMenu(logger *log.Logger, config **Config, pluginManager *plugin.Manager) bool {
 	options := []huh.Option[string]{
 		huh.NewOption("Repositories", "repositories"),
 		huh.NewOption("Symlinks", "symlinks"),
@@ -54,7 +55,7 @@ func handleMainMenu(logger *log.Logger, config **Config) bool {
 
 	switch choice {
 	case "plugins":
-		handlePluginsCommand(logger, *config)
+		handlePluginsCommand(logger, *config, pluginManager)
 	case "repositories":
 		return handleRepositoriesCommand(logger, *config)
 	case "gitspace":
@@ -370,8 +371,7 @@ func ensureConfig(logger *log.Logger, config **Config) bool {
 	return true
 }
 
-// Plugin-related functions that use huh for rendering sub-menus
-func handlePluginsCommand(logger *log.Logger, config *Config) {
+func handlePluginsCommand(logger *log.Logger, config *Config, pluginManager *plugin.Manager) {
 	for {
 		var subChoice string
 		err := huh.NewSelect[string]().
@@ -380,6 +380,7 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 				huh.NewOption("Install Plugin", "install"),
 				huh.NewOption("Uninstall Plugin", "uninstall"),
 				huh.NewOption("Print Installed Plugins", "print"),
+				huh.NewOption("Run Plugin", "run"),
 				huh.NewOption("Go back", "back"),
 			).
 			Value(&subChoice).
@@ -392,108 +393,19 @@ func handlePluginsCommand(logger *log.Logger, config *Config) {
 
 		switch subChoice {
 		case "install":
-			handleInstallPlugin(logger)
+			plugin.HandleInstallPlugin(logger, pluginManager)
 		case "uninstall":
-			handleUninstallPlugin(logger)
+			plugin.HandleUninstallPlugin(logger, pluginManager)
 		case "print":
-			handlePrintInstalledPlugins(logger)
+			if err := plugin.HandleListInstalledPlugins(logger); err != nil {
+				logger.Error("Failed to list installed plugins", "error", err)
+			}
+		case "run":
+			plugin.HandleRunPlugin(logger, pluginManager)
 		case "back":
 			return
 		default:
 			logger.Error("Invalid plugins sub-choice")
 		}
-	}
-}
-
-func handleInstallPlugin(logger *log.Logger) {
-	var installChoice string
-	err := huh.NewSelect[string]().
-		Title("Choose installation type").
-		Options(
-			huh.NewOption("Gitspace Catalog", "catalog"),
-			huh.NewOption("Local", "local"),
-			huh.NewOption("Remote", "remote"),
-		).
-		Value(&installChoice).
-		Run()
-
-	if err != nil {
-		logger.Error("Error getting installation type", "error", err)
-		return
-	}
-
-	var source string
-	switch installChoice {
-	case "catalog":
-		source, err = handleGitspaceCatalogInstall(logger)
-	case "local":
-		source, err = getPathWithCompletion("Enter the local plugin source (directory containing gitspace-plugin.toml)")
-	case "remote":
-		err = huh.NewInput().
-			Title("Enter the remote plugin URL").
-			Value(&source).
-			Run()
-	}
-
-	if err != nil {
-		logger.Error("Error getting plugin source", "error", err)
-		return
-	}
-
-	err = installPlugin(logger, source)
-	if err != nil {
-		logger.Error("Failed to install plugin", "error", err)
-	} else {
-		logger.Info("Plugin installed successfully")
-	}
-}
-
-func selectInstalledPlugin(logger *log.Logger, prompt string) (string, error) {
-	pluginsDir, err := getPluginsDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get plugins directory: %w", err)
-	}
-
-	plugins, err := listInstalledPlugins(pluginsDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to list installed plugins: %w", err)
-	}
-
-	if len(plugins) == 0 {
-		return "", fmt.Errorf("no plugins installed")
-	}
-
-	var selectedPlugin string
-	err = huh.NewSelect[string]().
-		Title(prompt).
-		Options(plugins...).
-		Value(&selectedPlugin).
-		Run()
-
-	if err != nil {
-		return "", fmt.Errorf("failed to select plugin: %w", err)
-	}
-
-	return selectedPlugin, nil
-}
-
-func handleUninstallPlugin(logger *log.Logger) {
-	pluginName, err := selectInstalledPlugin(logger, "Select a plugin to uninstall")
-	if err != nil {
-		logger.Error("Error selecting plugin to uninstall", "error", err)
-		return
-	}
-	err = uninstallPlugin(logger, pluginName)
-	if err != nil {
-		logger.Error("Failed to uninstall plugin", "error", err)
-	} else {
-		logger.Info("Plugin uninstalled successfully", "plugin", pluginName)
-	}
-}
-
-func handlePrintInstalledPlugins(logger *log.Logger) {
-	err := printInstalledPlugins(logger)
-	if err != nil {
-		logger.Error("Failed to print installed plugins", "error", err)
 	}
 }
