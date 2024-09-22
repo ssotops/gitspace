@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/charmbracelet/log"
+	"github.com/ssotops/gitspace/plugin"
 )
 
 func main() {
@@ -25,6 +26,9 @@ func main() {
 	}
 	logger.Debug("Config loaded successfully", "config_path", config.Global.Path)
 
+	// Initialize the plugin manager
+	pluginManager := plugin.NewManager()
+
 	for {
 		select {
 		case <-signalChan:
@@ -32,13 +36,14 @@ func main() {
 			return
 		default:
 			printConfigPath(config)
-			if handleMainMenu(logger, &config) {
+			if handleMainMenu(logger, &config, pluginManager) {
 				logger.Info("User chose to quit. Exiting Gitspace...")
 				return
 			}
 		}
 	}
 }
+
 
 func printConfigPath(config *Config) {
 	if config != nil && config.Global.Path != "" {
