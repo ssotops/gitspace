@@ -78,6 +78,7 @@ func (m *Manager) LoadPlugin(name, path string) error {
 	infoReq := &pb.PluginInfoRequest{}
 	resp, err := plugin.sendRequest(1, infoReq)
 	if err != nil {
+		cmd.Process.Kill()
 		return fmt.Errorf("failed to get plugin info: %w", err)
 	}
 
