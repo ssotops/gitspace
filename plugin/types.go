@@ -24,7 +24,6 @@ type MenuItem struct {
 	Command string
 }
 
-// Update the Plugin struct
 type Plugin struct {
 	Name        string
 	Path        string

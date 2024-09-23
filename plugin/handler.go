@@ -48,7 +48,7 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 		}
 	}
 
-	err = InstallPlugin(logger, source)
+	err = InstallPlugin(logger, manager, source)
 	if err != nil {
 		return fmt.Errorf("failed to install plugin: %w", err)
 	}
@@ -66,8 +66,9 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 	}
 
 	pluginName := manifest.Metadata.Name
-	pluginPath := filepath.Join(pluginsDir, pluginName)
+	pluginPath := filepath.Join(pluginsDir, pluginName, pluginName+".so")
 
+	// Load the plugin
 	err = manager.LoadPlugin(pluginName, pluginPath)
 	if err != nil {
 		return fmt.Errorf("error loading plugin: %w", err)

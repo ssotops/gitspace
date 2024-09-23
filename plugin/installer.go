@@ -39,7 +39,7 @@ func getPluginsDir() (string, error) {
 	return pluginsDir, nil
 }
 
-func InstallPlugin(logger *log.Logger, source string) error {
+func InstallPlugin(logger *log.Logger, manager *Manager,source string) error {
 	logger.Debug("Starting plugin installation", "source", source)
 
 	source = strings.TrimSpace(source)
@@ -108,14 +108,15 @@ func InstallPlugin(logger *log.Logger, source string) error {
 	}
 
 	pluginName := manifest.Metadata.Name
-	pluginDir := filepath.Join(pluginsDir, pluginName)
+	pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
 
-	logger.Debug("Copying plugin directory", "from", sourceDir, "to", pluginDir)
-	if err := copyDir(sourceDir, pluginDir); err != nil {
-		return fmt.Errorf("failed to copy plugin directory: %w", err)
+	// Load the plugin
+	err = manager.LoadPlugin(pluginName, pluginPath)
+	if err != nil {
+		return fmt.Errorf("error loading plugin: %w", err)
 	}
 
-	logger.Info("Plugin installed successfully", "name", pluginName, "version", manifest.Metadata.Version, "path", pluginDir)
+	logger.Info("Plugin installed and loaded successfully", "name", pluginName)
 	return nil
 }
 

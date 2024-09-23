@@ -30,17 +30,17 @@ func (m *Manager) LoadPlugin(name, path string) error {
 	cmd := exec.Command(path)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
 	err = cmd.Start()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start plugin process: %w", err)
 	}
 
 	plugin := &Plugin{
@@ -51,19 +51,19 @@ func (m *Manager) LoadPlugin(name, path string) error {
 		stdout: stdout,
 	}
 
-	// Initialize the plugin
-	initReq := &pb.PluginInfoRequest{}
-	resp, err := plugin.sendRequest(1, initReq)
+	// Retrieve plugin info
+	infoReq := &pb.PluginInfoRequest{}
+	resp, err := plugin.sendRequest(1, infoReq)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get plugin info: %w", err)
 	}
 
 	pluginInfo := resp.(*pb.PluginInfo)
-	if pluginInfo.Name == "" {
-		return fmt.Errorf("failed to initialize plugin: empty name returned")
-	}
+	plugin.Version = pluginInfo.Version
+	// plugin.Description = pluginInfo.Description
 
 	m.plugins[name] = plugin
+
 	return nil
 }
 
