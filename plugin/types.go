@@ -1,6 +1,7 @@
 package plugin
 
 import (
+  "bufio"
 	"io"
 	"os/exec"
   "github.com/ssotops/gitspace/logger"
@@ -58,4 +59,9 @@ type Template struct {
 type MenuOption struct {
     Label   string `json:"label"`
     Command string `json:"command"`
+}
+
+type bufferedWriteCloser struct {
+    *bufio.Writer
+    closer io.Closer
 }

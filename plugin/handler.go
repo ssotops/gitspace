@@ -148,11 +148,14 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	}
 
 	// Get the plugin menu
+	logger.Debug("Getting menu for selected plugin", "plugin", selectedPlugin)
 	menuResp, err := manager.GetPluginMenu(selectedPlugin)
 	if err != nil {
 		logger.Error("Error getting plugin menu", "error", err)
 		return fmt.Errorf("error getting plugin menu: %w", err)
 	}
+
+	logger.Debug("Received menu response", "dataSize", len(menuResp.MenuData))
 
 	var menuOptions []MenuOption
 	err = json.Unmarshal(menuResp.MenuData, &menuOptions)
@@ -161,6 +164,9 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 		return fmt.Errorf("error unmarshalling menu data: %w", err)
 	}
 
+	logger.Debug("Unmarshalled menu options", "optionsCount", len(menuOptions))
+
+	// Present menu to user
 	var selectedCommand string
 	err = huh.NewSelect[string]().
 		Title("Choose an action").
@@ -178,6 +184,8 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 		logger.Error("Error running menu", "error", err)
 		return fmt.Errorf("error running menu: %w", err)
 	}
+
+	logger.Debug("User selected command", "command", selectedCommand)
 
 	// Execute the selected command
 	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, nil)

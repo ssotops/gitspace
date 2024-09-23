@@ -55,12 +55,10 @@ func (m *Manager) LoadPlugin(name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
-
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
@@ -71,19 +69,17 @@ func (m *Manager) LoadPlugin(name string) error {
 		return fmt.Errorf("failed to start plugin process: %w", err)
 	}
 
-	// Read stderr in a goroutine
+	// Use buffered writer for stdin
+	bufferedStdin := &bufferedWriteCloser{
+		Writer: bufio.NewWriter(stdin),
+		closer: stdin,
+	}
+
+	// Log stderr in a goroutine
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			m.logger.Info("Plugin stderr", "name", name, "message", scanner.Text())
-		}
-	}()
-
-	// Read stdout in a goroutine
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			m.logger.Info("Plugin stdout", "name", name, "message", scanner.Text())
+			m.logger.Debug("Plugin stderr", "name", name, "message", scanner.Text())
 		}
 	}()
 
@@ -91,30 +87,36 @@ func (m *Manager) LoadPlugin(name string) error {
 		Name:   name,
 		Path:   path,
 		cmd:    cmd,
-		stdin:  stdin,
+		stdin:  bufferedStdin,
 		stdout: stdout,
 		logger: m.logger,
 	}
 
-	// Send an initial message to the plugin
-	m.logger.Debug("Sending initial message to plugin", "name", name)
-	resp, err := plugin.sendRequest(1, &pb.PluginInfoRequest{})
+	// Get plugin info
+	m.logger.Debug("Getting plugin info", "name", name)
+	infoResp, err := plugin.sendRequest(1, &pb.PluginInfoRequest{})
 	if err != nil {
-		m.logger.Error("Failed to send initial message to plugin", "name", name, "error", err)
-		cmd.Process.Kill()
-		return fmt.Errorf("failed to send initial message to plugin: %w", err)
+		return fmt.Errorf("failed to get plugin info: %w", err)
 	}
-
-	// Check the response
-	pluginInfo, ok := resp.(*pb.PluginInfo)
+	pluginInfo, ok := infoResp.(*pb.PluginInfo)
 	if !ok {
-		m.logger.Error("Unexpected response type from plugin", "name", name, "type", fmt.Sprintf("%T", resp))
-		cmd.Process.Kill()
-		return fmt.Errorf("unexpected response type from plugin")
+		return fmt.Errorf("unexpected response type for plugin info")
 	}
+	m.logger.Info("Plugin info received", "name", name, "version", pluginInfo.Version)
 
-	m.logger.Info("Received plugin info", "name", name, "version", pluginInfo.Version)
+	// Get menu
+	m.logger.Debug("Getting plugin menu", "name", name)
+	menuResp, err := plugin.sendRequest(3, &pb.MenuRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get plugin menu: %w", err)
+	}
+	menu, ok := menuResp.(*pb.MenuResponse)
+	if !ok {
+		return fmt.Errorf("unexpected response type for plugin menu")
+	}
+	m.logger.Debug("Plugin menu received", "name", name, "menuDataSize", len(menu.MenuData))
 
+	// Store the plugin
 	m.plugins[name] = plugin
 
 	m.logger.Info("Plugin loaded successfully", "name", name)
@@ -207,26 +209,30 @@ func (m *Manager) GetPluginMenu(pluginName string) (*pb.MenuResponse, error) {
 
 func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, error) {
 	p.logger.Debug("Sending request to plugin", "type", msgType, "name", p.Name)
+
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	p.logger.Debug("Sending message type", "type", msgType)
 	if _, err := p.stdin.Write([]byte{byte(msgType)}); err != nil {
 		return nil, fmt.Errorf("failed to write message type: %w", err)
 	}
 
+	p.logger.Debug("Sending message length", "length", len(data))
 	if err := binary.Write(p.stdin, binary.LittleEndian, uint32(len(data))); err != nil {
 		return nil, fmt.Errorf("failed to write message length: %w", err)
 	}
 
+	p.logger.Debug("Sending message data", "data", fmt.Sprintf("%x", data))
 	if _, err := p.stdin.Write(data); err != nil {
 		return nil, fmt.Errorf("failed to write message data: %w", err)
 	}
 
-	// Flush stdin to ensure the message is sent immediately
-	if f, ok := p.stdin.(*os.File); ok {
-		f.Sync()
+	// Flush the buffered writer
+	if err := p.stdin.(*bufferedWriteCloser).Flush(); err != nil {
+		p.logger.Warn("Failed to flush stdin", "error", err)
 	}
 
 	p.logger.Debug("Waiting for response from plugin", "name", p.Name)
@@ -234,6 +240,7 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+	p.logger.Debug("Received response", "type", respType, "dataLength", len(respData))
 
 	var resp proto.Message
 	switch respType {
@@ -252,8 +259,7 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	// p.logger.Debug("Received response from plugin", "name", p.Name)
-  p.logger.Debug("Received raw data from plugin", "msgType", msgType, "rawData", fmt.Sprintf("%x", data))
+	p.logger.Debug("Unmarshalled response", "content", fmt.Sprintf("%+v", resp))
 	return resp, nil
 }
 
@@ -355,25 +361,31 @@ func (m *Manager) DiscoverPlugins() error {
 }
 
 func readMessage(r io.Reader) (uint32, []byte, error) {
-	var msgType [1]byte
-	_, err := r.Read(msgType[:])
+	// Read message type (as a single byte)
+	var msgTypeByte [1]byte
+	n, err := r.Read(msgTypeByte[:])
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read message type: %w", err)
 	}
+	msgType := uint32(msgTypeByte[0])
+	fmt.Printf("DEBUG: Read message type: %d (bytes read: %d)\n", msgType, n)
 
+	// Read message length
 	var msgLen uint32
-	err = binary.Read(r, binary.LittleEndian, &msgLen)
-	if err != nil {
+	if err := binary.Read(r, binary.LittleEndian, &msgLen); err != nil {
 		return 0, nil, fmt.Errorf("failed to read message length: %w", err)
 	}
+	fmt.Printf("DEBUG: Read message length: %d\n", msgLen)
 
+	// Read message data
 	data := make([]byte, msgLen)
-	_, err = io.ReadFull(r, data)
+	n, err = io.ReadFull(r, data)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read message data: %w", err)
 	}
+	fmt.Printf("DEBUG: Read message data: %x (bytes read: %d)\n", data, n)
 
-	return uint32(msgType[0]), data, nil
+	return msgType, data, nil
 }
 
 func (m *Manager) AddDiscoveredPlugin(name, path string) {
@@ -387,4 +399,11 @@ func (m *Manager) IsPluginLoaded(name string) bool {
 	defer m.mu.RUnlock()
 	_, exists := m.plugins[name]
 	return exists
+}
+
+func (bwc *bufferedWriteCloser) Close() error {
+	if err := bwc.Flush(); err != nil {
+		return err
+	}
+	return bwc.closer.Close()
 }
