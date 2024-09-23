@@ -3,7 +3,6 @@ package plugin
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
@@ -27,7 +26,6 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 	}
 
 	var source string
-	var pluginName string
 
 	switch installChoice {
 	case "catalog":
@@ -35,18 +33,10 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 		if err != nil {
 			return fmt.Errorf("error selecting from Gitspace Catalog: %w", err)
 		}
-		pluginName = strings.TrimPrefix(source, "catalog://")
 	case "local":
-		source, err = getPathWithCompletion("Enter the local plugin source (directory containing gitspace-plugin.toml)")
+		source, err = getPathWithCompletion("Enter the local plugin source directory")
 		if err != nil {
 			return fmt.Errorf("error getting local plugin path: %w", err)
-		}
-		err = huh.NewInput().
-			Title("Enter a name for the plugin").
-			Value(&pluginName).
-			Run()
-		if err != nil {
-			return fmt.Errorf("error getting plugin name: %w", err)
 		}
 	case "remote":
 		err = huh.NewInput().
@@ -55,13 +45,6 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 			Run()
 		if err != nil {
 			return fmt.Errorf("error getting remote plugin URL: %w", err)
-		}
-		err = huh.NewInput().
-			Title("Enter a name for the plugin").
-			Value(&pluginName).
-			Run()
-		if err != nil {
-			return fmt.Errorf("error getting plugin name: %w", err)
 		}
 	}
 
@@ -74,7 +57,16 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 	if err != nil {
 		return fmt.Errorf("failed to get plugins directory: %w", err)
 	}
-	pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
+
+	// Load the manifest to get the plugin name
+	manifestPath := filepath.Join(pluginsDir, filepath.Base(source), "gitspace-plugin.toml")
+	manifest, err := loadPluginManifest(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to load plugin manifest: %w", err)
+	}
+
+	pluginName := manifest.Metadata.Name
+	pluginPath := filepath.Join(pluginsDir, pluginName)
 
 	err = manager.LoadPlugin(pluginName, pluginPath)
 	if err != nil {
@@ -212,22 +204,6 @@ func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
 	}
 
 	return selectedItem, nil
-}
-
-// Helper functions
-
-func getPathWithCompletion(prompt string) (string, error) {
-	var path string
-	err := huh.NewInput().
-		Title(prompt).
-		Value(&path).
-		Run()
-
-	if err != nil {
-		return "", err
-	}
-
-	return path, nil
 }
 
 func createOptionsFromStrings(items []string) []huh.Option[string] {
