@@ -1,47 +1,72 @@
 package plugin
 
 import (
+	"bufio"
+
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 
+	"github.com/charmbracelet/log"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
 	"google.golang.org/protobuf/proto"
 )
 
 type Manager struct {
-	plugins          map[string]*Plugin
-	installedPlugins map[string]string // map of plugin name to path
-	mu               sync.RWMutex
+	plugins           map[string]*Plugin
+	discoveredPlugins map[string]string // map of plugin name to path
+	mu                sync.RWMutex
 }
 
 func NewManager() *Manager {
 	return &Manager{
-		plugins:          make(map[string]*Plugin),
-		installedPlugins: make(map[string]string),
+		plugins:           make(map[string]*Plugin),
+		discoveredPlugins: make(map[string]string),
 	}
 }
 
-func (m *Manager) LoadPlugin(name, path string) error {
+func (m *Manager) LoadPlugin(name string, logger *log.Logger) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	path, exists := m.discoveredPlugins[name]
+	if !exists {
+		return fmt.Errorf("plugin %s not discovered", name)
+	}
+
+	logger.Info("Attempting to load plugin", "name", name, "path", path)
 
 	cmd := exec.Command(path)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	err = cmd.Start()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start plugin process: %w", err)
 	}
+
+	// Read stderr in a goroutine
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			logger.Info("Plugin stderr", "name", name, "message", scanner.Text())
+		}
+	}()
 
 	plugin := &Plugin{
 		Name:   name,
@@ -51,19 +76,22 @@ func (m *Manager) LoadPlugin(name, path string) error {
 		stdout: stdout,
 	}
 
-	// Initialize the plugin
-	initReq := &pb.PluginInfoRequest{}
-	resp, err := plugin.sendRequest(1, initReq)
+	// Retrieve plugin info
+	logger.Debug("Retrieving plugin info", "name", name)
+	infoReq := &pb.PluginInfoRequest{}
+	resp, err := plugin.sendRequest(1, infoReq)
 	if err != nil {
-		return err
+		cmd.Process.Kill()
+		return fmt.Errorf("failed to get plugin info: %w", err)
 	}
 
 	pluginInfo := resp.(*pb.PluginInfo)
-	if pluginInfo.Name == "" {
-		return fmt.Errorf("failed to initialize plugin: empty name returned")
-	}
+	plugin.Version = pluginInfo.Version
+
+	logger.Info("Plugin loaded successfully", "name", name, "version", plugin.Version)
 
 	m.plugins[name] = plugin
+
 	return nil
 }
 
@@ -81,7 +109,7 @@ func (m *Manager) UnloadPlugin(name string) error {
 	}
 
 	delete(m.plugins, name)
-	delete(m.installedPlugins, name)
+	delete(m.discoveredPlugins, name) // Changed from m.installedPlugins to m.discoveredPlugins
 	return nil
 }
 
@@ -126,25 +154,29 @@ func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]s
 
 func (m *Manager) GetPluginMenu(pluginName string) ([]*pb.MenuItem, error) {
 	m.mu.RLock()
-	plugin, ok := m.plugins[pluginName]
+	plugin, exists := m.plugins[pluginName]
 	m.mu.RUnlock()
 
-	if !ok {
+	if !exists {
 		return nil, fmt.Errorf("plugin not found: %s", pluginName)
 	}
 
+	log.Printf("Sending GetMenu request to plugin: %s", pluginName)
 	req := &pb.MenuRequest{}
 
 	resp, err := plugin.sendRequest(3, req)
 	if err != nil {
+		log.Printf("Error getting menu from plugin %s: %v", pluginName, err)
 		return nil, err
 	}
 
 	menuResp := resp.(*pb.MenuResponse)
+	log.Printf("Received menu response from plugin %s with %d items", pluginName, len(menuResp.Items))
 	return menuResp.Items, nil
 }
 
 func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, error) {
+	log.Printf("Sending request type %d to plugin %s", msgType, p.Name)
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -160,6 +192,7 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 		return nil, err
 	}
 
+	log.Printf("Waiting for response from plugin %s", p.Name)
 	respData, err := io.ReadAll(p.stdout)
 	if err != nil {
 		return nil, err
@@ -182,18 +215,101 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 		return nil, err
 	}
 
+	log.Printf("Received response from plugin %s", p.Name)
 	return resp, nil
 }
 
-func (m *Manager) GetInstalledPlugins() map[string]string {
+func (m *Manager) GetDiscoveredPlugins() map[string]string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Return a copy of the installedPlugins map to avoid concurrent access issues
-	installedPlugins := make(map[string]string)
-	for name, path := range m.installedPlugins {
-		installedPlugins[name] = path
+	// Return a copy of the discoveredPlugins map to avoid concurrent access issues
+	discoveredPlugins := make(map[string]string)
+	for name, path := range m.discoveredPlugins {
+		discoveredPlugins[name] = path
 	}
 
-	return installedPlugins
+	return discoveredPlugins
+}
+
+func (m *Manager) LoadAllPlugins(logger *log.Logger) error {
+	err := m.DiscoverPlugins(logger)
+	if err != nil {
+		return fmt.Errorf("failed to discover plugins: %w", err)
+	}
+
+	for name := range m.discoveredPlugins {
+		err := m.LoadPlugin(name, logger)
+		if err != nil {
+			logger.Warn("Failed to load plugin", "name", name, "error", err)
+		}
+	}
+
+	return nil
+}
+
+// EnsurePluginDirectoryPermissions ensures that the plugins directory has the correct permissions and ownership
+// Without this, we'll see logs like this (which effectively means the plugin is not loaded):
+// WARN <plugin/manager.go:222> Failed to load plugin name=hello-world error="failed to start plugin process: fork/exec /Users/alechp/.ssot/gitspace/plugins/hello-world/hello-world: permission denied"
+func EnsurePluginDirectoryPermissions(logger *log.Logger) error {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	// Ensure the plugins directory exists
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugins directory: %w", err)
+	}
+
+	// Walk through the plugins directory and set permissions
+	err = filepath.Walk(pluginsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Set directory permissions to 755 (rwxr-xr-x)
+		if info.IsDir() {
+			if err := os.Chmod(path, 0755); err != nil {
+				return fmt.Errorf("failed to set directory permissions for %s: %w", path, err)
+			}
+		} else {
+			// Set file permissions to 755 (rwxr-xr-x) to ensure executability
+			if err := os.Chmod(path, 0755); err != nil {
+				return fmt.Errorf("failed to set file permissions for %s: %w", path, err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to set permissions for plugins directory: %w", err)
+	}
+
+	logger.Info("Plugin directory permissions set successfully", "path", pluginsDir)
+	return nil
+}
+
+func (m *Manager) DiscoverPlugins(logger *log.Logger) error {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return fmt.Errorf("failed to read plugins directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			pluginName := entry.Name()
+			pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
+			m.discoveredPlugins[pluginName] = pluginPath
+			logger.Debug("Discovered plugin", "name", pluginName, "path", pluginPath)
+		}
+	}
+
+	return nil
 }

@@ -3,7 +3,6 @@ package plugin
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
@@ -27,7 +26,6 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 	}
 
 	var source string
-	var pluginName string
 
 	switch installChoice {
 	case "catalog":
@@ -35,18 +33,10 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 		if err != nil {
 			return fmt.Errorf("error selecting from Gitspace Catalog: %w", err)
 		}
-		pluginName = strings.TrimPrefix(source, "catalog://")
 	case "local":
-		source, err = getPathWithCompletion("Enter the local plugin source (directory containing gitspace-plugin.toml)")
+		source, err = getPathWithCompletion("Enter the local plugin source directory")
 		if err != nil {
 			return fmt.Errorf("error getting local plugin path: %w", err)
-		}
-		err = huh.NewInput().
-			Title("Enter a name for the plugin").
-			Value(&pluginName).
-			Run()
-		if err != nil {
-			return fmt.Errorf("error getting plugin name: %w", err)
 		}
 	case "remote":
 		err = huh.NewInput().
@@ -56,16 +46,9 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 		if err != nil {
 			return fmt.Errorf("error getting remote plugin URL: %w", err)
 		}
-		err = huh.NewInput().
-			Title("Enter a name for the plugin").
-			Value(&pluginName).
-			Run()
-		if err != nil {
-			return fmt.Errorf("error getting plugin name: %w", err)
-		}
 	}
 
-	err = InstallPlugin(logger, source)
+	err = InstallPlugin(logger, manager, source)
 	if err != nil {
 		return fmt.Errorf("failed to install plugin: %w", err)
 	}
@@ -74,9 +57,19 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 	if err != nil {
 		return fmt.Errorf("failed to get plugins directory: %w", err)
 	}
-	pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
 
-	err = manager.LoadPlugin(pluginName, pluginPath)
+	// Load the manifest to get the plugin name
+	manifestPath := filepath.Join(pluginsDir, filepath.Base(source), "gitspace-plugin.toml")
+	manifest, err := loadPluginManifest(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to load plugin manifest: %w", err)
+	}
+
+	pluginName := manifest.Metadata.Name
+	// pluginPath := filepath.Join(pluginsDir, pluginName, pluginName+".so")
+
+	// Load the plugin
+	err = manager.LoadPlugin(pluginName, logger)
 	if err != nil {
 		return fmt.Errorf("error loading plugin: %w", err)
 	}
@@ -140,17 +133,23 @@ func HandleListInstalledPlugins(logger *log.Logger) error {
 }
 
 func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
-	plugins := manager.GetLoadedPlugins()
+	discoveredPlugins := manager.GetDiscoveredPlugins()
+	logger.Debug("Discovered plugins", "count", len(discoveredPlugins))
 
-	if len(plugins) == 0 {
-		logger.Info("No plugins loaded")
+	if len(discoveredPlugins) == 0 {
+		logger.Info("No plugins discovered")
 		return nil
+	}
+
+	var pluginNames []string
+	for name := range discoveredPlugins {
+		pluginNames = append(pluginNames, name)
 	}
 
 	var selectedPlugin string
 	err := huh.NewSelect[string]().
 		Title("Choose a plugin to run").
-		Options(createOptionsFromStrings(getPluginNames(plugins))...).
+		Options(createOptionsFromStrings(pluginNames)...).
 		Value(&selectedPlugin).
 		Run()
 
@@ -158,10 +157,23 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("error selecting plugin: %w", err)
 	}
 
+	logger.Debug("Selected plugin", "name", selectedPlugin)
+
+	// Load the plugin
+	err = manager.LoadPlugin(selectedPlugin, logger)
+	if err != nil {
+		logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
+		return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
+	}
+
+	// Get the menu items from the selected plugin
 	menuItems, err := manager.GetPluginMenu(selectedPlugin)
 	if err != nil {
+		logger.Error("Error getting plugin menu", "error", err)
 		return fmt.Errorf("error getting plugin menu: %w", err)
 	}
+
+	logger.Debug("Got menu items", "count", len(menuItems))
 
 	var selectedCommand string
 	err = huh.NewSelect[string]().
@@ -174,8 +186,11 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("error selecting command: %w", err)
 	}
 
+	logger.Debug("Selected command", "command", selectedCommand)
+
 	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, nil)
 	if err != nil {
+		logger.Error("Error executing command", "error", err)
 		return fmt.Errorf("error executing command: %w", err)
 	}
 
@@ -212,22 +227,6 @@ func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
 	}
 
 	return selectedItem, nil
-}
-
-// Helper functions
-
-func getPathWithCompletion(prompt string) (string, error) {
-	var path string
-	err := huh.NewInput().
-		Title(prompt).
-		Value(&path).
-		Run()
-
-	if err != nil {
-		return "", err
-	}
-
-	return path, nil
 }
 
 func createOptionsFromStrings(items []string) []huh.Option[string] {

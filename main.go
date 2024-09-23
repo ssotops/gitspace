@@ -28,6 +28,10 @@ func main() {
 
 	// Initialize the plugin manager
 	pluginManager := plugin.NewManager()
+	err = pluginManager.DiscoverPlugins(logger)
+	if err != nil {
+		logger.Error("Failed to discover plugins", "error", err)
+	}
 
 	for {
 		select {
@@ -43,7 +47,6 @@ func main() {
 		}
 	}
 }
-
 
 func printConfigPath(config *Config) {
 	if config != nil && config.Global.Path != "" {
