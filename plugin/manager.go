@@ -3,9 +3,12 @@ package plugin
 import (
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 
+	"github.com/charmbracelet/log"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
 	"google.golang.org/protobuf/proto"
 )
@@ -126,10 +129,10 @@ func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]s
 
 func (m *Manager) GetPluginMenu(pluginName string) ([]*pb.MenuItem, error) {
 	m.mu.RLock()
-	plugin, ok := m.plugins[pluginName]
+	plugin, exists := m.plugins[pluginName]
 	m.mu.RUnlock()
 
-	if !ok {
+	if !exists {
 		return nil, fmt.Errorf("plugin not found: %s", pluginName)
 	}
 
@@ -196,4 +199,75 @@ func (m *Manager) GetInstalledPlugins() map[string]string {
 	}
 
 	return installedPlugins
+}
+
+func (m *Manager) LoadAllPlugins(logger *log.Logger) error {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return fmt.Errorf("failed to read plugins directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			pluginName := entry.Name()
+			pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
+
+			err := m.LoadPlugin(pluginName, pluginPath)
+			if err != nil {
+				logger.Warn("Failed to load plugin", "name", pluginName, "error", err)
+				continue
+			}
+			logger.Info("Plugin loaded successfully", "name", pluginName)
+		}
+	}
+
+	return nil
+}
+
+// EnsurePluginDirectoryPermissions ensures that the plugins directory has the correct permissions and ownership
+// Without this, we'll see logs like this (which effectively means the plugin is not loaded):
+// WARN <plugin/manager.go:222> Failed to load plugin name=hello-world error="failed to start plugin process: fork/exec /Users/alechp/.ssot/gitspace/plugins/hello-world/hello-world: permission denied"
+func EnsurePluginDirectoryPermissions(logger *log.Logger) error {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	// Ensure the plugins directory exists
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugins directory: %w", err)
+	}
+
+	// Walk through the plugins directory and set permissions
+	err = filepath.Walk(pluginsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Set directory permissions to 755 (rwxr-xr-x)
+		if info.IsDir() {
+			if err := os.Chmod(path, 0755); err != nil {
+				return fmt.Errorf("failed to set directory permissions for %s: %w", path, err)
+			}
+		} else {
+			// Set file permissions to 755 (rwxr-xr-x) to ensure executability
+			if err := os.Chmod(path, 0755); err != nil {
+				return fmt.Errorf("failed to set file permissions for %s: %w", path, err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to set permissions for plugins directory: %w", err)
+	}
+
+	logger.Info("Plugin directory permissions set successfully", "path", pluginsDir)
+	return nil
 }

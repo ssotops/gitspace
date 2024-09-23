@@ -26,8 +26,19 @@ func main() {
 	}
 	logger.Debug("Config loaded successfully", "config_path", config.Global.Path)
 
+	// Ensure plugin directory permissions
+	if err := plugin.EnsurePluginDirectoryPermissions(logger); err != nil {
+		logger.Error("Failed to set plugin directory permissions", "error", err)
+		logger.Warn("Plugins cannot be loaded due to permission issues in the ~/.ssot/gitspace/plugins directory. Plugin functionality will be limited.")
+		// Continue execution, but plugin functionality will be limited
+	}
+
 	// Initialize the plugin manager
 	pluginManager := plugin.NewManager()
+	err = pluginManager.LoadAllPlugins(logger) // Changed ':=' to '='
+	if err != nil {
+		logger.Error("Failed to load plugins", "error", err)
+	}
 
 	for {
 		select {
@@ -43,7 +54,6 @@ func main() {
 		}
 	}
 }
-
 
 func printConfigPath(config *Config) {
 	if config != nil && config.Global.Path != "" {

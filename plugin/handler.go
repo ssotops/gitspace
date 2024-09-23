@@ -140,10 +140,15 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return nil
 	}
 
+	var pluginNames []string
+	for name := range plugins {
+		pluginNames = append(pluginNames, name)
+	}
+
 	var selectedPlugin string
 	err := huh.NewSelect[string]().
 		Title("Choose a plugin to run").
-		Options(createOptionsFromStrings(getPluginNames(plugins))...).
+		Options(createOptionsFromStrings(pluginNames)...).
 		Value(&selectedPlugin).
 		Run()
 
@@ -151,6 +156,7 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("error selecting plugin: %w", err)
 	}
 
+	// Get the menu items from the selected plugin
 	menuItems, err := manager.GetPluginMenu(selectedPlugin)
 	if err != nil {
 		return fmt.Errorf("error getting plugin menu: %w", err)
