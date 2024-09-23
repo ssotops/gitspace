@@ -19,6 +19,7 @@ func main() {
 
 	printWelcomeMessage()
 
+	logger.Debug("About to get config from user")
 	config, err := getConfigFromUser(logger)
 	if err != nil {
 		logger.Error("Error getting config", "error", err)
@@ -26,27 +27,29 @@ func main() {
 	}
 	logger.Debug("Config loaded successfully", "config_path", config.Global.Path)
 
-	// Ensure plugin directory permissions
+	logger.Debug("About to ensure plugin directory permissions")
 	if err := plugin.EnsurePluginDirectoryPermissions(logger); err != nil {
 		logger.Error("Failed to set plugin directory permissions", "error", err)
 		logger.Warn("Plugins cannot be loaded due to permission issues in the ~/.ssot/gitspace/plugins directory. Plugin functionality will be limited.")
-		// Continue execution, but plugin functionality will be limited
 	}
 
-	// Initialize the plugin manager
+	logger.Debug("Initializing plugin manager")
 	pluginManager := plugin.NewManager()
-	err = pluginManager.LoadAllPlugins(logger) // Changed ':=' to '='
+	err = pluginManager.LoadAllPlugins(logger)
 	if err != nil {
 		logger.Error("Failed to load plugins", "error", err)
 	}
 
+	logger.Debug("Entering main loop")
 	for {
 		select {
 		case <-signalChan:
 			logger.Info("Received interrupt signal. Exiting Gitspace...")
 			return
 		default:
+			logger.Debug("Printing config path")
 			printConfigPath(config)
+			logger.Debug("Handling main menu")
 			if handleMainMenu(logger, &config, pluginManager) {
 				logger.Info("User chose to quit. Exiting Gitspace...")
 				return

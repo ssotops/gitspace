@@ -134,6 +134,7 @@ func HandleListInstalledPlugins(logger *log.Logger) error {
 
 func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 	plugins := manager.GetLoadedPlugins()
+	logger.Debug("Loaded plugins", "count", len(plugins))
 
 	if len(plugins) == 0 {
 		logger.Info("No plugins loaded")
@@ -156,11 +157,16 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("error selecting plugin: %w", err)
 	}
 
+	logger.Debug("Selected plugin", "name", selectedPlugin)
+
 	// Get the menu items from the selected plugin
 	menuItems, err := manager.GetPluginMenu(selectedPlugin)
 	if err != nil {
+		logger.Error("Error getting plugin menu", "error", err)
 		return fmt.Errorf("error getting plugin menu: %w", err)
 	}
+
+	logger.Debug("Got menu items", "count", len(menuItems))
 
 	var selectedCommand string
 	err = huh.NewSelect[string]().
@@ -173,8 +179,11 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("error selecting command: %w", err)
 	}
 
+	logger.Debug("Selected command", "command", selectedCommand)
+
 	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, nil)
 	if err != nil {
+		logger.Error("Error executing command", "error", err)
 		return fmt.Errorf("error executing command: %w", err)
 	}
 

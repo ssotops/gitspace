@@ -1,6 +1,10 @@
 package plugin
 
 import (
+	"bufio"
+	"context"
+	"time"
+
 	"fmt"
 	"io"
 	"os"
@@ -30,6 +34,8 @@ func (m *Manager) LoadPlugin(name, path string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	log.Printf("Attempting to load plugin: %s from path: %s", name, path)
+
 	cmd := exec.Command(path)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -41,10 +47,23 @@ func (m *Manager) LoadPlugin(name, path string) error {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
 	err = cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start plugin process: %w", err)
 	}
+
+	// Read stderr in a goroutine
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			log.Printf("Plugin %s stderr: %s", name, scanner.Text())
+		}
+	}()
 
 	plugin := &Plugin{
 		Name:   name,
@@ -55,6 +74,7 @@ func (m *Manager) LoadPlugin(name, path string) error {
 	}
 
 	// Retrieve plugin info
+	log.Printf("Retrieving plugin info for: %s", name)
 	infoReq := &pb.PluginInfoRequest{}
 	resp, err := plugin.sendRequest(1, infoReq)
 	if err != nil {
@@ -63,7 +83,8 @@ func (m *Manager) LoadPlugin(name, path string) error {
 
 	pluginInfo := resp.(*pb.PluginInfo)
 	plugin.Version = pluginInfo.Version
-	// plugin.Description = pluginInfo.Description
+
+	log.Printf("Plugin %s loaded successfully with version: %s", name, plugin.Version)
 
 	m.plugins[name] = plugin
 
@@ -136,18 +157,22 @@ func (m *Manager) GetPluginMenu(pluginName string) ([]*pb.MenuItem, error) {
 		return nil, fmt.Errorf("plugin not found: %s", pluginName)
 	}
 
+	log.Printf("Sending GetMenu request to plugin: %s", pluginName)
 	req := &pb.MenuRequest{}
 
 	resp, err := plugin.sendRequest(3, req)
 	if err != nil {
+		log.Printf("Error getting menu from plugin %s: %v", pluginName, err)
 		return nil, err
 	}
 
 	menuResp := resp.(*pb.MenuResponse)
+	log.Printf("Received menu response from plugin %s with %d items", pluginName, len(menuResp.Items))
 	return menuResp.Items, nil
 }
 
 func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, error) {
+	log.Printf("Sending request type %d to plugin %s", msgType, p.Name)
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -163,6 +188,7 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 		return nil, err
 	}
 
+	log.Printf("Waiting for response from plugin %s", p.Name)
 	respData, err := io.ReadAll(p.stdout)
 	if err != nil {
 		return nil, err
@@ -185,6 +211,7 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 		return nil, err
 	}
 
+	log.Printf("Received response from plugin %s", p.Name)
 	return resp, nil
 }
 
@@ -217,12 +244,31 @@ func (m *Manager) LoadAllPlugins(logger *log.Logger) error {
 			pluginName := entry.Name()
 			pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
 
-			err := m.LoadPlugin(pluginName, pluginPath)
-			if err != nil {
-				logger.Warn("Failed to load plugin", "name", pluginName, "error", err)
-				continue
+			logger.Debug("Attempting to load plugin", "name", pluginName)
+
+			// Create a context with a timeout
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			// Use a channel to communicate the result of loading the plugin
+			done := make(chan error)
+
+			go func() {
+				err := m.LoadPlugin(pluginName, pluginPath)
+				done <- err
+			}()
+
+			// Wait for the plugin to load or for the timeout to occur
+			select {
+			case err := <-done:
+				if err != nil {
+					logger.Warn("Failed to load plugin", "name", pluginName, "error", err)
+				} else {
+					logger.Info("Plugin loaded successfully", "name", pluginName)
+				}
+			case <-ctx.Done():
+				logger.Warn("Plugin loading timed out", "name", pluginName)
 			}
-			logger.Info("Plugin loaded successfully", "name", pluginName)
 		}
 	}
 

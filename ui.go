@@ -30,6 +30,7 @@ func printWelcomeMessage() {
 }
 
 func handleMainMenu(logger *log.Logger, config **Config, pluginManager *plugin.Manager) bool {
+	logger.Debug("Entering handleMainMenu")
 	options := []huh.Option[string]{
 		huh.NewOption("Repositories", "repositories"),
 		huh.NewOption("Symlinks", "symlinks"),
@@ -39,6 +40,7 @@ func handleMainMenu(logger *log.Logger, config **Config, pluginManager *plugin.M
 	}
 
 	var choice string
+	logger.Debug("Presenting main menu options to user")
 	err := huh.NewSelect[string]().
 		Title("Choose an action").
 		Options(options...).
@@ -47,11 +49,14 @@ func handleMainMenu(logger *log.Logger, config **Config, pluginManager *plugin.M
 
 	if err != nil {
 		if err == huh.ErrUserAborted {
+			logger.Debug("User aborted menu selection")
 			return true
 		}
 		logger.Error("Error getting user choice", "error", err)
 		return false
 	}
+
+	logger.Debug("User selected option", "choice", choice)
 
 	switch choice {
 	case "plugins":
@@ -68,6 +73,7 @@ func handleMainMenu(logger *log.Logger, config **Config, pluginManager *plugin.M
 		logger.Error("Invalid choice")
 	}
 
+	logger.Debug("Exiting handleMainMenu")
 	return false
 }
 
