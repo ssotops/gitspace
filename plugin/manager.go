@@ -151,8 +151,7 @@ func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]s
 
 	return cmdResp.Result, nil
 }
-
-func (m *Manager) GetPluginMenu(pluginName string) ([]*pb.MenuItem, error) {
+func (m *Manager) GetPluginMenu(pluginName string) (*pb.MenuResponse, error) {
 	m.mu.RLock()
 	plugin, exists := m.plugins[pluginName]
 	m.mu.RUnlock()
@@ -170,9 +169,13 @@ func (m *Manager) GetPluginMenu(pluginName string) ([]*pb.MenuItem, error) {
 		return nil, err
 	}
 
-	menuResp := resp.(*pb.MenuResponse)
-	log.Printf("Received menu response from plugin %s with %d items", pluginName, len(menuResp.Items))
-	return menuResp.Items, nil
+	menuResp, ok := resp.(*pb.MenuResponse)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type: %T", resp)
+	}
+
+	log.Printf("Received menu response from plugin %s", pluginName)
+	return menuResp, nil
 }
 
 func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, error) {

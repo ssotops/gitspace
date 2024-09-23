@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -166,28 +167,30 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
 	}
 
-	// Get the menu items from the selected plugin
-	menuItems, err := manager.GetPluginMenu(selectedPlugin)
+	menuResp, err := manager.GetPluginMenu(selectedPlugin)
 	if err != nil {
 		logger.Error("Error getting plugin menu", "error", err)
 		return fmt.Errorf("error getting plugin menu: %w", err)
 	}
 
-	logger.Debug("Got menu items", "count", len(menuItems))
-
-	var selectedCommand string
-	err = huh.NewSelect[string]().
-		Title("Choose a command to run").
-		Options(createOptionsFromMenuItems(menuItems)...).
-		Value(&selectedCommand).
-		Run()
-
+	var menu huh.Form
+	err = json.Unmarshal(menuResp.MenuData, &menu)
 	if err != nil {
-		return fmt.Errorf("error selecting command: %w", err)
+		logger.Error("Error unmarshalling menu data", "error", err)
+		return fmt.Errorf("error unmarshalling menu data: %w", err)
 	}
 
-	logger.Debug("Selected command", "command", selectedCommand)
+	// Run the menu
+	err = menu.Run()
+	if err != nil {
+		logger.Error("Error running menu", "error", err)
+		return fmt.Errorf("error running menu: %w", err)
+	}
 
+	// Get the selected command from the menu result
+	selectedCommand := menu.GetString("command")
+
+	// Execute the selected command
 	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, nil)
 	if err != nil {
 		logger.Error("Error executing command", "error", err)
