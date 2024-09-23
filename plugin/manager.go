@@ -2,8 +2,6 @@ package plugin
 
 import (
 	"bufio"
-	"context"
-	"time"
 
 	"fmt"
 	"io"
@@ -18,23 +16,28 @@ import (
 )
 
 type Manager struct {
-	plugins          map[string]*Plugin
-	installedPlugins map[string]string // map of plugin name to path
-	mu               sync.RWMutex
+	plugins           map[string]*Plugin
+	discoveredPlugins map[string]string // map of plugin name to path
+	mu                sync.RWMutex
 }
 
 func NewManager() *Manager {
 	return &Manager{
-		plugins:          make(map[string]*Plugin),
-		installedPlugins: make(map[string]string),
+		plugins:           make(map[string]*Plugin),
+		discoveredPlugins: make(map[string]string),
 	}
 }
 
-func (m *Manager) LoadPlugin(name, path string) error {
+func (m *Manager) LoadPlugin(name string, logger *log.Logger) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	log.Printf("Attempting to load plugin: %s from path: %s", name, path)
+	path, exists := m.discoveredPlugins[name]
+	if !exists {
+		return fmt.Errorf("plugin %s not discovered", name)
+	}
+
+	logger.Info("Attempting to load plugin", "name", name, "path", path)
 
 	cmd := exec.Command(path)
 	stdin, err := cmd.StdinPipe()
@@ -61,7 +64,7 @@ func (m *Manager) LoadPlugin(name, path string) error {
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			log.Printf("Plugin %s stderr: %s", name, scanner.Text())
+			logger.Info("Plugin stderr", "name", name, "message", scanner.Text())
 		}
 	}()
 
@@ -74,7 +77,7 @@ func (m *Manager) LoadPlugin(name, path string) error {
 	}
 
 	// Retrieve plugin info
-	log.Printf("Retrieving plugin info for: %s", name)
+	logger.Debug("Retrieving plugin info", "name", name)
 	infoReq := &pb.PluginInfoRequest{}
 	resp, err := plugin.sendRequest(1, infoReq)
 	if err != nil {
@@ -85,7 +88,7 @@ func (m *Manager) LoadPlugin(name, path string) error {
 	pluginInfo := resp.(*pb.PluginInfo)
 	plugin.Version = pluginInfo.Version
 
-	log.Printf("Plugin %s loaded successfully with version: %s", name, plugin.Version)
+	logger.Info("Plugin loaded successfully", "name", name, "version", plugin.Version)
 
 	m.plugins[name] = plugin
 
@@ -106,7 +109,7 @@ func (m *Manager) UnloadPlugin(name string) error {
 	}
 
 	delete(m.plugins, name)
-	delete(m.installedPlugins, name)
+	delete(m.discoveredPlugins, name) // Changed from m.installedPlugins to m.discoveredPlugins
 	return nil
 }
 
@@ -216,60 +219,29 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 	return resp, nil
 }
 
-func (m *Manager) GetInstalledPlugins() map[string]string {
+func (m *Manager) GetDiscoveredPlugins() map[string]string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Return a copy of the installedPlugins map to avoid concurrent access issues
-	installedPlugins := make(map[string]string)
-	for name, path := range m.installedPlugins {
-		installedPlugins[name] = path
+	// Return a copy of the discoveredPlugins map to avoid concurrent access issues
+	discoveredPlugins := make(map[string]string)
+	for name, path := range m.discoveredPlugins {
+		discoveredPlugins[name] = path
 	}
 
-	return installedPlugins
+	return discoveredPlugins
 }
 
 func (m *Manager) LoadAllPlugins(logger *log.Logger) error {
-	pluginsDir, err := getPluginsDir()
+	err := m.DiscoverPlugins(logger)
 	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
+		return fmt.Errorf("failed to discover plugins: %w", err)
 	}
 
-	entries, err := os.ReadDir(pluginsDir)
-	if err != nil {
-		return fmt.Errorf("failed to read plugins directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			pluginName := entry.Name()
-			pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
-
-			logger.Debug("Attempting to load plugin", "name", pluginName)
-
-			// Create a context with a timeout
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			// Use a channel to communicate the result of loading the plugin
-			done := make(chan error)
-
-			go func() {
-				err := m.LoadPlugin(pluginName, pluginPath)
-				done <- err
-			}()
-
-			// Wait for the plugin to load or for the timeout to occur
-			select {
-			case err := <-done:
-				if err != nil {
-					logger.Warn("Failed to load plugin", "name", pluginName, "error", err)
-				} else {
-					logger.Info("Plugin loaded successfully", "name", pluginName)
-				}
-			case <-ctx.Done():
-				logger.Warn("Plugin loading timed out", "name", pluginName)
-			}
+	for name := range m.discoveredPlugins {
+		err := m.LoadPlugin(name, logger)
+		if err != nil {
+			logger.Warn("Failed to load plugin", "name", name, "error", err)
 		}
 	}
 
@@ -316,5 +288,28 @@ func EnsurePluginDirectoryPermissions(logger *log.Logger) error {
 	}
 
 	logger.Info("Plugin directory permissions set successfully", "path", pluginsDir)
+	return nil
+}
+
+func (m *Manager) DiscoverPlugins(logger *log.Logger) error {
+	pluginsDir, err := getPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return fmt.Errorf("failed to read plugins directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			pluginName := entry.Name()
+			pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
+			m.discoveredPlugins[pluginName] = pluginPath
+			logger.Debug("Discovered plugin", "name", pluginName, "path", pluginPath)
+		}
+	}
+
 	return nil
 }

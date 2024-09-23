@@ -66,10 +66,10 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 	}
 
 	pluginName := manifest.Metadata.Name
-	pluginPath := filepath.Join(pluginsDir, pluginName, pluginName+".so")
+	// pluginPath := filepath.Join(pluginsDir, pluginName, pluginName+".so")
 
 	// Load the plugin
-	err = manager.LoadPlugin(pluginName, pluginPath)
+	err = manager.LoadPlugin(pluginName, logger)
 	if err != nil {
 		return fmt.Errorf("error loading plugin: %w", err)
 	}
@@ -133,16 +133,16 @@ func HandleListInstalledPlugins(logger *log.Logger) error {
 }
 
 func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
-	plugins := manager.GetLoadedPlugins()
-	logger.Debug("Loaded plugins", "count", len(plugins))
+	discoveredPlugins := manager.GetDiscoveredPlugins()
+	logger.Debug("Discovered plugins", "count", len(discoveredPlugins))
 
-	if len(plugins) == 0 {
-		logger.Info("No plugins loaded")
+	if len(discoveredPlugins) == 0 {
+		logger.Info("No plugins discovered")
 		return nil
 	}
 
 	var pluginNames []string
-	for name := range plugins {
+	for name := range discoveredPlugins {
 		pluginNames = append(pluginNames, name)
 	}
 
@@ -158,6 +158,13 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 	}
 
 	logger.Debug("Selected plugin", "name", selectedPlugin)
+
+	// Load the plugin
+	err = manager.LoadPlugin(selectedPlugin, logger)
+	if err != nil {
+		logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
+		return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
+	}
 
 	// Get the menu items from the selected plugin
 	menuItems, err := manager.GetPluginMenu(selectedPlugin)

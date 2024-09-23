@@ -28,9 +28,9 @@ func main() {
 
 	// Initialize the plugin manager
 	pluginManager := plugin.NewManager()
-	err = pluginManager.LoadAllPlugins(logger)
+	err = pluginManager.DiscoverPlugins(logger)
 	if err != nil {
-		logger.Error("Failed to load plugins", "error", err)
+		logger.Error("Failed to discover plugins", "error", err)
 	}
 
 	for {

@@ -39,7 +39,7 @@ func getPluginsDir() (string, error) {
 	return pluginsDir, nil
 }
 
-func InstallPlugin(logger *log.Logger, manager *Manager,source string) error {
+func InstallPlugin(logger *log.Logger, manager *Manager, source string) error {
 	logger.Debug("Starting plugin installation", "source", source)
 
 	source = strings.TrimSpace(source)
@@ -108,10 +108,10 @@ func InstallPlugin(logger *log.Logger, manager *Manager,source string) error {
 	}
 
 	pluginName := manifest.Metadata.Name
-	pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
+	// pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
 
 	// Load the plugin
-	err = manager.LoadPlugin(pluginName, pluginPath)
+	err = manager.LoadPlugin(pluginName, logger)
 	if err != nil {
 		return fmt.Errorf("error loading plugin: %w", err)
 	}
