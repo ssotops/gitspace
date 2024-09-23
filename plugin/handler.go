@@ -173,22 +173,30 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("error getting plugin menu: %w", err)
 	}
 
-	var menu huh.Form
-	err = json.Unmarshal(menuResp.MenuData, &menu)
+	var menuOptions []MenuOption
+	err = json.Unmarshal(menuResp.MenuData, &menuOptions)
 	if err != nil {
 		logger.Error("Error unmarshalling menu data", "error", err)
 		return fmt.Errorf("error unmarshalling menu data: %w", err)
 	}
 
-	// Run the menu
-	err = menu.Run()
+	var selectedCommand string
+	err = huh.NewSelect[string]().
+		Title("Choose an action").
+		Options(func() []huh.Option[string] {
+			options := make([]huh.Option[string], len(menuOptions))
+			for i, opt := range menuOptions {
+				options[i] = huh.NewOption(opt.Label, opt.Command)
+			}
+			return options
+		}()...).
+		Value(&selectedCommand).
+		Run()
+
 	if err != nil {
 		logger.Error("Error running menu", "error", err)
 		return fmt.Errorf("error running menu: %w", err)
 	}
-
-	// Get the selected command from the menu result
-	selectedCommand := menu.GetString("command")
 
 	// Execute the selected command
 	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, nil)

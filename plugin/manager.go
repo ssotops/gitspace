@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"bufio"
+	"encoding/binary"
 
 	"fmt"
 	"io"
@@ -85,7 +86,11 @@ func (m *Manager) LoadPlugin(name string, logger *log.Logger) error {
 		return fmt.Errorf("failed to get plugin info: %w", err)
 	}
 
-	pluginInfo := resp.(*pb.PluginInfo)
+	pluginInfo, ok := resp.(*pb.PluginInfo)
+	if !ok {
+		cmd.Process.Kill()
+		return fmt.Errorf("unexpected response type for GetPluginInfo: %T", resp)
+	}
 	plugin.Version = pluginInfo.Version
 
 	logger.Info("Plugin loaded successfully", "name", name, "version", plugin.Version)
@@ -151,6 +156,7 @@ func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]s
 
 	return cmdResp.Result, nil
 }
+
 func (m *Manager) GetPluginMenu(pluginName string) (*pb.MenuResponse, error) {
 	m.mu.RLock()
 	plugin, exists := m.plugins[pluginName]
@@ -182,27 +188,34 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 	log.Printf("Sending request type %d to plugin %s", msgType, p.Name)
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	_, err = p.stdin.Write([]byte{byte(msgType)})
-	if err != nil {
-		return nil, err
+	if _, err := p.stdin.Write([]byte{byte(msgType)}); err != nil {
+		return nil, fmt.Errorf("failed to write message type: %w", err)
 	}
 
-	_, err = p.stdin.Write(data)
-	if err != nil {
-		return nil, err
+	if err := binary.Write(p.stdin, binary.LittleEndian, uint32(len(data))); err != nil {
+		return nil, fmt.Errorf("failed to write message length: %w", err)
+	}
+
+	if _, err := p.stdin.Write(data); err != nil {
+		return nil, fmt.Errorf("failed to write message data: %w", err)
+	}
+
+	// Flush stdin to ensure the message is sent immediately
+	if f, ok := p.stdin.(*os.File); ok {
+		f.Sync()
 	}
 
 	log.Printf("Waiting for response from plugin %s", p.Name)
-	respData, err := io.ReadAll(p.stdout)
+	respType, respData, err := readMessage(p.stdout)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var resp proto.Message
-	switch msgType {
+	switch respType {
 	case 1:
 		resp = &pb.PluginInfo{}
 	case 2:
@@ -210,12 +223,12 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 	case 3:
 		resp = &pb.MenuResponse{}
 	default:
-		return nil, fmt.Errorf("unknown message type: %d", msgType)
+		return nil, fmt.Errorf("unknown response type: %d", respType)
 	}
 
 	err = proto.Unmarshal(respData, resp)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	log.Printf("Received response from plugin %s", p.Name)
@@ -315,4 +328,26 @@ func (m *Manager) DiscoverPlugins(logger *log.Logger) error {
 	}
 
 	return nil
+}
+
+func readMessage(r io.Reader) (uint32, []byte, error) {
+	var msgType [1]byte
+	_, err := r.Read(msgType[:])
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to read message type: %w", err)
+	}
+
+	var msgLen uint32
+	err = binary.Read(r, binary.LittleEndian, &msgLen)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to read message length: %w", err)
+	}
+
+	data := make([]byte, msgLen)
+	_, err = io.ReadFull(r, data)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to read message data: %w", err)
+	}
+
+	return uint32(msgType[0]), data, nil
 }

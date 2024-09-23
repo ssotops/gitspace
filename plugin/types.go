@@ -52,3 +52,8 @@ type Template struct {
 		URL  string `toml:"url"`
 	} `toml:"repository"`
 }
+
+type MenuOption struct {
+    Label   string `json:"label"`
+    Command string `json:"command"`
+}
