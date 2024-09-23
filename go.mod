@@ -13,7 +13,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pelletier/go-toml/v2 v2.2.3
-	github.com/ssotops/gitspace-plugin-sdk v0.0.0-00010101000000-000000000000
+	github.com/ssotops/gitspace-plugin-sdk v0.0.0-20240923114730-3921de448c9c
 	golang.org/x/oauth2 v0.23.0
 	google.golang.org/protobuf v1.34.2
 )

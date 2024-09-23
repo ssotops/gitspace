@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/charmbracelet/log"
+	"github.com/ssotops/gitspace/logger"
 )
 
 func removeDuplicates(slice []string) []string {
@@ -22,7 +22,7 @@ func removeDuplicates(slice []string) []string {
 	return list
 }
 
-func getCacheDirOrDefault(logger *log.Logger) string {
+func getCacheDirOrDefault(logger *logger.RateLimitedLogger) string {
 	cacheDir, err := getCacheDir()
 	if err != nil {
 		logger.Error("Error getting cache directory", "error", err)

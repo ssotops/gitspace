@@ -11,8 +11,8 @@ import (
   "runtime/debug"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/go-git/go-git/v5"
+  "github.com/ssotops/gitspace/logger"
 )
 
 type ReleaseInfo struct {
@@ -63,7 +63,7 @@ func getGitCommitHash() (string, error) {
 	return ref.Hash().String(), nil
 }
 
-func upgradeGitspace(logger *log.Logger) {
+func upgradeGitspace(logger *logger.RateLimitedLogger) {
 	logger.Info("Upgrading Gitspace...")
 
 	repo := "ssotops/gitspace"
@@ -160,7 +160,7 @@ func downloadBinary(url string) (string, error) {
 	return tempFile.Name(), nil
 }
 
-func printVersionInfo(logger *log.Logger) {
+func printVersionInfo(logger *logger.RateLimitedLogger) {
     version, commitHash := getCurrentVersion()
     logger.Info("Current version", "version", version)
     if commitHash != "" {

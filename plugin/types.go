@@ -3,6 +3,7 @@ package plugin
 import (
 	"io"
 	"os/exec"
+  "github.com/ssotops/gitspace/logger"
 )
 
 type GitspaceCatalog struct {
@@ -25,17 +26,18 @@ type MenuItem struct {
 }
 
 type Plugin struct {
-	Name        string
-	Path        string
-	Version     string `toml:"version"`
-	Description string `toml:"description"`
-	Repository  struct {
-		Type string `toml:"type"`
-		URL  string `toml:"url"`
-	} `toml:"repository"`
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
+    Name        string
+    Path        string
+    Version     string `toml:"version"`
+    Description string `toml:"description"`
+    Repository  struct {
+        Type string `toml:"type"`
+        URL  string `toml:"url"`
+    } `toml:"repository"`
+    cmd    *exec.Cmd
+    stdin  io.WriteCloser
+    stdout io.ReadCloser
+    logger *logger.RateLimitedLogger
 }
 
 type CatalogPlugin struct {

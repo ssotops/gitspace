@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/ssotops/gitspace/lib"
+  "github.com/ssotops/gitspace/logger"
 )
 
 type RepoResult struct {
@@ -25,7 +25,7 @@ type RepoResult struct {
 	Error         error
 }
 
-func cloneRepositories(logger *log.Logger, config *Config) {
+func cloneRepositories(logger *logger.RateLimitedLogger, config *Config) {
 	cacheDir, err := getCacheDir()
 	if err != nil {
 		logger.Error("Error getting cache directory", "error", err)
@@ -146,7 +146,7 @@ func cloneRepositories(logger *log.Logger, config *Config) {
 	printSummaryTable(config, results, repoDir)
 }
 
-func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKeyPath, initialBranch string, logger *log.Logger) error {
+func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKeyPath, initialBranch string, logger *logger.RateLimitedLogger) error {
 	repoURL := fmt.Sprintf("https://%s/%s/%s.git", scm, owner, repo)
 
 	cloneOptions := &git.CloneOptions{
@@ -175,7 +175,7 @@ func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKe
 	return nil
 }
 
-func cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch string, logger *log.Logger) error {
+func cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch string, logger *logger.RateLimitedLogger) error {
 	// Create the repository directory
 	if err := os.MkdirAll(repoPath, 0755); err != nil {
 		return fmt.Errorf("failed to create repository directory: %w", err)
@@ -220,7 +220,7 @@ func cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch string, logger 
 	return nil
 }
 
-func updateIndexTOML(logger *log.Logger, config *Config, repoResults map[string]*RepoResult) error {
+func updateIndexTOML(logger *logger.RateLimitedLogger, config *Config, repoResults map[string]*RepoResult) error {
 	cacheDir, err := getCacheDir()
 	if err != nil {
 		return fmt.Errorf("failed to get cache directory: %w", err)
@@ -327,7 +327,7 @@ func updateIndexTOML(logger *log.Logger, config *Config, repoResults map[string]
 	return nil
 }
 
-func syncRepositories(logger *log.Logger, config *Config) {
+func syncRepositories(logger *logger.RateLimitedLogger, config *Config) {
 	logger.Info("Syncing repositories...")
 
 	if config == nil || config.Global.SCM == "" || config.Global.Owner == "" {

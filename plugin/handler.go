@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/log"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
+	"github.com/ssotops/gitspace/logger"
 )
 
-func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
+func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	var installChoice string
 	err := huh.NewSelect[string]().
 		Title("Choose installation type").
@@ -70,7 +70,7 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 	// pluginPath := filepath.Join(pluginsDir, pluginName, pluginName+".so")
 
 	// Load the plugin
-	err = manager.LoadPlugin(pluginName, logger)
+	err = manager.LoadPlugin(pluginName)
 	if err != nil {
 		return fmt.Errorf("error loading plugin: %w", err)
 	}
@@ -79,7 +79,7 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 	return nil
 }
 
-func HandleUninstallPlugin(logger *log.Logger, manager *Manager) error {
+func HandleUninstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	plugins, err := ListInstalledPlugins(logger)
 	if err != nil {
 		return fmt.Errorf("failed to list installed plugins: %w", err)
@@ -115,7 +115,7 @@ func HandleUninstallPlugin(logger *log.Logger, manager *Manager) error {
 	return nil
 }
 
-func HandleListInstalledPlugins(logger *log.Logger) error {
+func HandleListInstalledPlugins(logger *logger.RateLimitedLogger) error {
 	plugins, err := ListInstalledPlugins(logger)
 	if err != nil {
 		return fmt.Errorf("failed to list installed plugins: %w", err)
@@ -133,7 +133,7 @@ func HandleListInstalledPlugins(logger *log.Logger) error {
 	return nil
 }
 
-func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
+func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	discoveredPlugins := manager.GetDiscoveredPlugins()
 	logger.Debug("Discovered plugins", "count", len(discoveredPlugins))
 
@@ -161,7 +161,7 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 	logger.Debug("Selected plugin", "name", selectedPlugin)
 
 	// Load the plugin
-	err = manager.LoadPlugin(selectedPlugin, logger)
+	err = manager.LoadPlugin(selectedPlugin)
 	if err != nil {
 		logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
 		return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
@@ -209,7 +209,7 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 	return nil
 }
 
-func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
+func handleGitspaceCatalogInstall(logger *logger.RateLimitedLogger) (string, error) {
 	owner := "ssotops"
 	repo := "gitspace-catalog"
 	catalog, err := fetchGitspaceCatalog(owner, repo)

@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/log"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pelletier/go-toml"
+	"github.com/ssotops/gitspace/logger"
 )
 
 type Config struct {
@@ -57,7 +57,7 @@ func getCacheDir() (string, error) {
 	return cacheDir, nil
 }
 
-func getConfigFromUser(logger *log.Logger) (*Config, error) {
+func getConfigFromUser(logger *logger.RateLimitedLogger) (*Config, error) {
 	defaultPath := "./gs.toml"
 
 	for {
