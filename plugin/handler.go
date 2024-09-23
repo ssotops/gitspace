@@ -57,42 +57,41 @@ func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) err
 	return nil
 }
 func HandleUninstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
-    plugins, err := ListInstalledPlugins(logger)
-    if err != nil {
-        return fmt.Errorf("failed to list installed plugins: %w", err)
-    }
+	plugins, err := ListInstalledPlugins(logger)
+	if err != nil {
+		return fmt.Errorf("failed to list installed plugins: %w", err)
+	}
 
-    if len(plugins) == 0 {
-        logger.Info("No plugins installed")
-        return nil
-    }
+	if len(plugins) == 0 {
+		logger.Info("No plugins installed")
+		return nil
+	}
 
-    var selectedPlugin string
-    err = huh.NewSelect[string]().
-        Title("Select a plugin to uninstall").
-        Options(createOptionsFromStrings(plugins)...).
-        Value(&selectedPlugin).
-        Run()
+	var selectedPlugin string
+	err = huh.NewSelect[string]().
+		Title("Select a plugin to uninstall").
+		Options(createOptionsFromStrings(plugins)...).
+		Value(&selectedPlugin).
+		Run()
 
-    if err != nil {
-        return fmt.Errorf("error selecting plugin to uninstall: %w", err)
-    }
+	if err != nil {
+		return fmt.Errorf("error selecting plugin to uninstall: %w", err)
+	}
 
-    err = UninstallPlugin(logger, selectedPlugin)
-    if err != nil {
-        return fmt.Errorf("failed to uninstall plugin: %w", err)
-    }
+	err = UninstallPlugin(logger, selectedPlugin)
+	if err != nil {
+		return fmt.Errorf("failed to uninstall plugin: %w", err)
+	}
 
-    err = manager.UnloadPlugin(selectedPlugin)
-    if err != nil {
-        return fmt.Errorf("error unloading plugin: %w", err)
-    }
+	err = manager.UnloadPlugin(selectedPlugin)
+	if err != nil {
+		return fmt.Errorf("error unloading plugin: %w", err)
+	}
 
-    logger.Info("Plugin uninstalled and unloaded successfully", "name", selectedPlugin)
-    logger.Info("Plugin installed successfully")
-    return nil
+	logger.Info("Plugin uninstalled and unloaded successfully", "name", selectedPlugin)
+	logger.Info("Plugin installed successfully")
+	return nil
 }
-
 
 func HandleListInstalledPlugins(logger *logger.RateLimitedLogger) error {
 	plugins, err := ListInstalledPlugins(logger)
@@ -139,13 +138,16 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 
 	logger.Debug("Selected plugin", "name", selectedPlugin)
 
-	// Load the plugin
-	err = manager.LoadPlugin(selectedPlugin)
-	if err != nil {
-		logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
-		return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
+	// Load the plugin if it's not already loaded
+	if !manager.IsPluginLoaded(selectedPlugin) {
+		err = manager.LoadPlugin(selectedPlugin)
+		if err != nil {
+			logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
+			return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
+		}
 	}
 
+	// Get the plugin menu
 	menuResp, err := manager.GetPluginMenu(selectedPlugin)
 	if err != nil {
 		logger.Error("Error getting plugin menu", "error", err)

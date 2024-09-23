@@ -252,7 +252,8 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	p.logger.Debug("Received response from plugin", "name", p.Name)
+	// p.logger.Debug("Received response from plugin", "name", p.Name)
+  p.logger.Debug("Received raw data from plugin", "msgType", msgType, "rawData", fmt.Sprintf("%x", data))
 	return resp, nil
 }
 
@@ -379,4 +380,11 @@ func (m *Manager) AddDiscoveredPlugin(name, path string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.discoveredPlugins[name] = path
+}
+
+func (m *Manager) IsPluginLoaded(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, exists := m.plugins[name]
+	return exists
 }
