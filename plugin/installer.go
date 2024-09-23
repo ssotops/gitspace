@@ -147,16 +147,7 @@ func InstallPlugin(logger *logger.RateLimitedLogger, manager *Manager, source st
 	logger.Debug("Adding plugin to discovered plugins", "name", pluginName, "path", pluginExecutable)
 	manager.AddDiscoveredPlugin(pluginName, pluginExecutable)
 
-	// Load the plugin
-	logger.Debug("Attempting to load plugin", "name", pluginName)
-	err = manager.LoadPlugin(pluginName)
-	if err != nil {
-		logger.Error("Error loading plugin", "name", pluginName, "error", err)
-		return fmt.Errorf("error loading plugin: %w", err)
-	}
-	logger.Debug("Successfully loaded plugin", "name", pluginName)
-
-	logger.Info("Plugin installed and loaded successfully", "name", pluginName)
+	logger.Info("Plugin installed successfully", "name", pluginName)
 	return nil
 }
 

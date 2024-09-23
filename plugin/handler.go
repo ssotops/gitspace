@@ -3,7 +3,6 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
@@ -54,66 +53,46 @@ func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) err
 		return fmt.Errorf("failed to install plugin: %w", err)
 	}
 
-	pluginsDir, err := getPluginsDir()
-	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
-	}
-
-	// Load the manifest to get the plugin name
-	manifestPath := filepath.Join(pluginsDir, filepath.Base(source), "gitspace-plugin.toml")
-	manifest, err := loadPluginManifest(manifestPath)
-	if err != nil {
-		return fmt.Errorf("failed to load plugin manifest: %w", err)
-	}
-
-	pluginName := manifest.Metadata.Name
-	// pluginPath := filepath.Join(pluginsDir, pluginName, pluginName+".so")
-
-	// Load the plugin
-	err = manager.LoadPlugin(pluginName)
-	if err != nil {
-		return fmt.Errorf("error loading plugin: %w", err)
-	}
-
-	logger.Info("Plugin installed and loaded successfully", "name", pluginName)
+	logger.Info("Plugin installed successfully")
 	return nil
 }
-
 func HandleUninstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
-	plugins, err := ListInstalledPlugins(logger)
-	if err != nil {
-		return fmt.Errorf("failed to list installed plugins: %w", err)
-	}
+    plugins, err := ListInstalledPlugins(logger)
+    if err != nil {
+        return fmt.Errorf("failed to list installed plugins: %w", err)
+    }
 
-	if len(plugins) == 0 {
-		logger.Info("No plugins installed")
-		return nil
-	}
+    if len(plugins) == 0 {
+        logger.Info("No plugins installed")
+        return nil
+    }
 
-	var selectedPlugin string
-	err = huh.NewSelect[string]().
-		Title("Select a plugin to uninstall").
-		Options(createOptionsFromStrings(plugins)...).
-		Value(&selectedPlugin).
-		Run()
+    var selectedPlugin string
+    err = huh.NewSelect[string]().
+        Title("Select a plugin to uninstall").
+        Options(createOptionsFromStrings(plugins)...).
+        Value(&selectedPlugin).
+        Run()
 
-	if err != nil {
-		return fmt.Errorf("error selecting plugin to uninstall: %w", err)
-	}
+    if err != nil {
+        return fmt.Errorf("error selecting plugin to uninstall: %w", err)
+    }
 
-	err = UninstallPlugin(logger, selectedPlugin)
-	if err != nil {
-		return fmt.Errorf("failed to uninstall plugin: %w", err)
-	}
+    err = UninstallPlugin(logger, selectedPlugin)
+    if err != nil {
+        return fmt.Errorf("failed to uninstall plugin: %w", err)
+    }
 
-	err = manager.UnloadPlugin(selectedPlugin)
-	if err != nil {
-		return fmt.Errorf("error unloading plugin: %w", err)
-	}
+    err = manager.UnloadPlugin(selectedPlugin)
+    if err != nil {
+        return fmt.Errorf("error unloading plugin: %w", err)
+    }
 
-	logger.Info("Plugin uninstalled and unloaded successfully", "name", selectedPlugin)
-	return nil
+    logger.Info("Plugin uninstalled and unloaded successfully", "name", selectedPlugin)
+    logger.Info("Plugin installed successfully")
+    return nil
 }
+
 
 func HandleListInstalledPlugins(logger *logger.RateLimitedLogger) error {
 	plugins, err := ListInstalledPlugins(logger)
