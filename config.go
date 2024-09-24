@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pelletier/go-toml"
-	"github.com/ssotops/gitspace/logger"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 type Config struct {

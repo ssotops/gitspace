@@ -13,7 +13,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/ssotops/gitspace/lib"
-  "github.com/ssotops/gitspace/logger"
+  "github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 type RepoResult struct {

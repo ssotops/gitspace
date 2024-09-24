@@ -8,19 +8,22 @@ import (
 	"syscall"
 
 	"github.com/charmbracelet/log"
-	"github.com/ssotops/gitspace/logger"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"github.com/ssotops/gitspace/plugin"
 )
 
 func main() {
-	logDir := filepath.Join(os.TempDir(), "gitspace", "logs")
-	logger, err := logger.NewRateLimitedLogger(logDir)
+	logDir := filepath.Join("logs", "gitspace")
+	logger, err := logger.NewRateLimitedLogger(logDir, "gitspace")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
 		os.Exit(1)
 	}
 
 	logger.Info("Gitspace starting up")
+
+	// Set log level to Debug for detailed logging
+	logger.SetLogLevel(log.DebugLevel)
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)

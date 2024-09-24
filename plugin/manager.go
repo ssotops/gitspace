@@ -13,7 +13,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
-	"github.com/ssotops/gitspace/logger"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -64,6 +64,7 @@ func (m *Manager) LoadPlugin(name string) error {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
+	m.logger.Debug("Starting plugin process", "name", name, "path", path)
 	err = cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start plugin process: %w", err)
@@ -92,17 +93,12 @@ func (m *Manager) LoadPlugin(name string) error {
 		logger: m.logger,
 	}
 
-	// Get plugin info
-	m.logger.Debug("Getting plugin info", "name", name)
+	m.logger.Debug("Sending GetPluginInfo request", "name", name)
 	infoResp, err := plugin.sendRequest(1, &pb.PluginInfoRequest{})
 	if err != nil {
 		return fmt.Errorf("failed to get plugin info: %w", err)
 	}
-	pluginInfo, ok := infoResp.(*pb.PluginInfo)
-	if !ok {
-		return fmt.Errorf("unexpected response type for plugin info")
-	}
-	m.logger.Info("Plugin info received", "name", name, "version", pluginInfo.Version)
+	m.logger.Debug("Received GetPluginInfo response", "name", name, "response", fmt.Sprintf("%+v", infoResp))
 
 	// Get menu
 	m.logger.Debug("Getting plugin menu", "name", name)
@@ -208,39 +204,39 @@ func (m *Manager) GetPluginMenu(pluginName string) (*pb.MenuResponse, error) {
 }
 
 func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, error) {
-	p.logger.Debug("Sending request to plugin", "type", msgType, "name", p.Name)
+	p.logger.Debug("Preparing to send request", "type", msgType, "name", p.Name)
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+	p.logger.Debug("Marshaled request", "data", fmt.Sprintf("%x", data))
 
-	p.logger.Debug("Sending message type", "type", msgType)
+	p.logger.Debug("Writing message type", "type", msgType)
 	if _, err := p.stdin.Write([]byte{byte(msgType)}); err != nil {
 		return nil, fmt.Errorf("failed to write message type: %w", err)
 	}
 
-	p.logger.Debug("Sending message length", "length", len(data))
+	p.logger.Debug("Writing message length", "length", len(data))
 	if err := binary.Write(p.stdin, binary.LittleEndian, uint32(len(data))); err != nil {
 		return nil, fmt.Errorf("failed to write message length: %w", err)
 	}
 
-	p.logger.Debug("Sending message data", "data", fmt.Sprintf("%x", data))
+	p.logger.Debug("Writing message data", "data", fmt.Sprintf("%x", data))
 	if _, err := p.stdin.Write(data); err != nil {
 		return nil, fmt.Errorf("failed to write message data: %w", err)
 	}
 
-	// Flush the buffered writer
 	if err := p.stdin.(*bufferedWriteCloser).Flush(); err != nil {
 		p.logger.Warn("Failed to flush stdin", "error", err)
 	}
 
-	p.logger.Debug("Waiting for response from plugin", "name", p.Name)
+	p.logger.Debug("Waiting for response", "name", p.Name)
 	respType, respData, err := readMessage(p.stdout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-	p.logger.Debug("Received response", "type", respType, "dataLength", len(respData))
+	p.logger.Debug("Received response", "type", respType, "dataLength", len(respData), "rawData", fmt.Sprintf("%x", respData))
 
 	var resp proto.Message
 	switch respType {
@@ -361,29 +357,31 @@ func (m *Manager) DiscoverPlugins() error {
 }
 
 func readMessage(r io.Reader) (uint32, []byte, error) {
-	// Read message type (as a single byte)
 	var msgTypeByte [1]byte
 	n, err := r.Read(msgTypeByte[:])
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read message type: %w", err)
 	}
 	msgType := uint32(msgTypeByte[0])
-	fmt.Printf("DEBUG: Read message type: %d (bytes read: %d)\n", msgType, n)
+	log.Debug("Read message type", "type", msgType, "bytesRead", n, "rawByte", fmt.Sprintf("%x", msgTypeByte))
 
-	// Read message length
 	var msgLen uint32
-	if err := binary.Read(r, binary.LittleEndian, &msgLen); err != nil {
+	err = binary.Read(r, binary.LittleEndian, &msgLen)
+	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read message length: %w", err)
 	}
-	fmt.Printf("DEBUG: Read message length: %d\n", msgLen)
+	log.Debug("Read message length", "length", msgLen)
 
-	// Read message data
+	if msgLen > 10*1024*1024 { // 10 MB limit, adjust as needed
+		return 0, nil, fmt.Errorf("message too large: %d bytes", msgLen)
+	}
+
 	data := make([]byte, msgLen)
 	n, err = io.ReadFull(r, data)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read message data: %w", err)
 	}
-	fmt.Printf("DEBUG: Read message data: %x (bytes read: %d)\n", data, n)
+	log.Debug("Read message data", "bytesRead", n, "data", fmt.Sprintf("%x", data))
 
 	return msgType, data, nil
 }

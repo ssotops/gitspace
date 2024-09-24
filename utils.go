@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/ssotops/gitspace/logger"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 func removeDuplicates(slice []string) []string {

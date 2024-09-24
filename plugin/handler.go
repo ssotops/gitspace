@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
-	"github.com/ssotops/gitspace/logger"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {

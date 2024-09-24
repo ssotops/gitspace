@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
-  "github.com/ssotops/gitspace/logger"
+  "github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 type ReleaseInfo struct {

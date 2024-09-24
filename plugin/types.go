@@ -4,7 +4,7 @@ import (
   "bufio"
 	"io"
 	"os/exec"
-  "github.com/ssotops/gitspace/logger"
+  "github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 type GitspaceCatalog struct {

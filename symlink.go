@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-  "github.com/ssotops/gitspace/logger"
+  "github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 func createLocalSymlinks(logger *logger.RateLimitedLogger, config *Config) {
