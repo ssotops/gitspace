@@ -35,6 +35,19 @@ func publishRelease(ctx context.Context) error {
 
 	src := client.Host().Directory(projectRoot)
 
+	// Remove local replacements
+	removeReplacements := client.Container().
+		From("golang:1.23.1").
+		WithDirectory("/src", src).
+		WithWorkdir("/src").
+		WithExec([]string{"go", "mod", "edit", "-dropreplace", "github.com/ssotops/gitspace/lib"}).
+		WithExec([]string{"go", "mod", "edit", "-dropreplace", "github.com/ssotops/gitspace-plugin-sdk"}).
+		WithExec([]string{"go", "get", "github.com/ssotops/gitspace-plugin-sdk@latest"}).
+		WithExec([]string{"go", "mod", "tidy"})
+
+	// Update the src directory with the modified go.mod
+	src = removeReplacements.Directory("/src")
+
 	// Determine the new version
 	newVersion, err := determineNewVersion(ctx)
 	if err != nil {

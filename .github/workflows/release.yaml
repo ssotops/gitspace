@@ -28,6 +28,9 @@ jobs:
           go build -o gitspace
           sudo mv gitspace /usr/local/bin
 
+      - name: Set up GITHUB_TOKEN
+        run: echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+
       - name: Run Dagger workflow
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
