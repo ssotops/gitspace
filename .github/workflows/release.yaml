@@ -22,10 +22,8 @@ jobs:
 
       - name: Remove local replacements and update dependencies
         run: |
-          go mod edit -dropreplace github.com/ssotops/gitspace/lib
           go mod edit -dropreplace github.com/ssotops/gitspace-plugin-sdk
           go get github.com/ssotops/gitspace-plugin-sdk@latest
-          go get github.com/ssotops/gitspace/lib@latest
           go mod tidy
 
       - name: Build gitspace
