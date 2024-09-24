@@ -3,7 +3,7 @@ package plugin
 import (
 	"bufio"
 	"encoding/binary"
-
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,8 +12,9 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/log"
-	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
+	"github.com/ssotops/gitspace-plugin-sdk/gsplug"
 	"github.com/ssotops/gitspace-plugin-sdk/logger"
+	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -149,6 +150,7 @@ func (m *Manager) GetLoadedPlugins() map[string]*Plugin {
 	return loadedPlugins
 }
 
+// In gitspace/plugin/manager.go
 func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]string) (string, error) {
 	m.mu.RLock()
 	plugin, ok := m.plugins[pluginName]
@@ -158,6 +160,40 @@ func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]s
 		return "", fmt.Errorf("plugin not found: %s", pluginName)
 	}
 
+	// Get the menu to validate the command and its parameters
+	menuResp, err := m.GetPluginMenu(pluginName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get plugin menu: %w", err)
+	}
+
+	var menuOptions []gsplug.MenuOption
+	err = json.Unmarshal(menuResp.MenuData, &menuOptions)
+	if err != nil {
+		return "", fmt.Errorf("failed to unmarshal menu data: %w", err)
+	}
+
+	var selectedOption *gsplug.MenuOption
+	for _, option := range menuOptions {
+		if option.Command == command {
+			selectedOption = &option
+			break
+		}
+	}
+
+	if selectedOption == nil {
+		return "", fmt.Errorf("command not found in menu: %s", command)
+	}
+
+	// Validate that all required parameters are provided
+	for _, param := range selectedOption.Parameters {
+		if param.Required {
+			if _, ok := params[param.Name]; !ok {
+				return "", fmt.Errorf("missing required parameter: %s", param.Name)
+			}
+		}
+	}
+
+	// Execute the command with provided parameters
 	req := &pb.CommandRequest{
 		Command:    command,
 		Parameters: params,
@@ -174,6 +210,19 @@ func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]s
 	}
 
 	return cmdResp.Result, nil
+}
+
+func (m *Manager) promptForParameter(param gsplug.ParameterInfo) (string, error) {
+	// Implement user prompting logic here
+	// You can use a library like github.com/charmbracelet/huh for interactive prompts
+	// For now, we'll use a simple fmt.Scanln
+	var value string
+	fmt.Printf("%s (%s): ", param.Name, param.Description)
+	_, err := fmt.Scanln(&value)
+	if err != nil {
+		return "", err
+	}
+	return value, nil
 }
 
 func (m *Manager) GetPluginMenu(pluginName string) (*pb.MenuResponse, error) {
