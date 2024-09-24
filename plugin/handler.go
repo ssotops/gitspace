@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/huh"
-	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
+	"github.com/ssotops/gitspace-plugin-sdk/gsplug"
 	"github.com/ssotops/gitspace-plugin-sdk/logger"
+	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
 )
 
 func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
@@ -111,6 +112,7 @@ func HandleListInstalledPlugins(logger *logger.RateLimitedLogger) error {
 	return nil
 }
 
+// gitspace/handler.go
 func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	discoveredPlugins := manager.GetDiscoveredPlugins()
 	logger.Debug("Discovered plugins", "count", len(discoveredPlugins))
@@ -157,7 +159,7 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 
 	logger.Debug("Received menu response", "dataSize", len(menuResp.MenuData))
 
-	var menuOptions []MenuOption
+	var menuOptions []gsplug.MenuOption
 	err = json.Unmarshal(menuResp.MenuData, &menuOptions)
 	if err != nil {
 		logger.Error("Error unmarshalling menu data", "error", err)
@@ -187,8 +189,38 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 
 	logger.Debug("User selected command", "command", selectedCommand)
 
-	// Execute the selected command
-	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, nil)
+	// Find the selected command in the menu options
+	var selectedOption *gsplug.MenuOption
+	for i, opt := range menuOptions {
+		if opt.Command == selectedCommand {
+			selectedOption = &menuOptions[i]
+			break
+		}
+	}
+
+	if selectedOption == nil {
+		logger.Error("Selected command not found in menu options")
+		return fmt.Errorf("selected command not found in menu options")
+	}
+
+	// Collect parameters
+	params := make(map[string]string)
+	for _, param := range selectedOption.Parameters {
+		var value string
+		err := huh.NewInput().
+			Title(fmt.Sprintf("%s (%s)", param.Name, param.Description)).
+			Value(&value).
+			Run()
+
+		if err != nil {
+			logger.Error("Error getting parameter input", "param", param.Name, "error", err)
+			return fmt.Errorf("error getting parameter input for %s: %w", param.Name, err)
+		}
+
+		params[param.Name] = value
+	}
+
+	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, params)
 	if err != nil {
 		logger.Error("Error executing command", "error", err)
 		return fmt.Errorf("error executing command: %w", err)

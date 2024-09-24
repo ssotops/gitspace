@@ -1,10 +1,10 @@
 package plugin
 
 import (
-  "bufio"
+	"bufio"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"io"
 	"os/exec"
-  "github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 type GitspaceCatalog struct {
@@ -21,24 +21,19 @@ type GitspaceCatalog struct {
 	Templates map[string]Template `toml:"templates"`
 }
 
-type MenuItem struct {
-	Label   string
-	Command string
-}
-
 type Plugin struct {
-    Name        string
-    Path        string
-    Version     string `toml:"version"`
-    Description string `toml:"description"`
-    Repository  struct {
-        Type string `toml:"type"`
-        URL  string `toml:"url"`
-    } `toml:"repository"`
-    cmd    *exec.Cmd
-    stdin  io.WriteCloser
-    stdout io.ReadCloser
-    logger *logger.RateLimitedLogger
+	Name        string
+	Path        string
+	Version     string `toml:"version"`
+	Description string `toml:"description"`
+	Repository  struct {
+		Type string `toml:"type"`
+		URL  string `toml:"url"`
+	} `toml:"repository"`
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
+	logger *logger.RateLimitedLogger
 }
 
 type CatalogPlugin struct {
@@ -56,12 +51,7 @@ type Template struct {
 	} `toml:"repository"`
 }
 
-type MenuOption struct {
-    Label   string `json:"label"`
-    Command string `json:"command"`
-}
-
 type bufferedWriteCloser struct {
-    *bufio.Writer
-    closer io.Closer
+	*bufio.Writer
+	closer io.Closer
 }
