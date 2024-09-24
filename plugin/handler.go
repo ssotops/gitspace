@@ -3,14 +3,13 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/log"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
-func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
+func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	var installChoice string
 	err := huh.NewSelect[string]().
 		Title("Choose installation type").
@@ -54,32 +53,10 @@ func HandleInstallPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("failed to install plugin: %w", err)
 	}
 
-	pluginsDir, err := getPluginsDir()
-	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
-	}
-
-	// Load the manifest to get the plugin name
-	manifestPath := filepath.Join(pluginsDir, filepath.Base(source), "gitspace-plugin.toml")
-	manifest, err := loadPluginManifest(manifestPath)
-	if err != nil {
-		return fmt.Errorf("failed to load plugin manifest: %w", err)
-	}
-
-	pluginName := manifest.Metadata.Name
-	// pluginPath := filepath.Join(pluginsDir, pluginName, pluginName+".so")
-
-	// Load the plugin
-	err = manager.LoadPlugin(pluginName, logger)
-	if err != nil {
-		return fmt.Errorf("error loading plugin: %w", err)
-	}
-
-	logger.Info("Plugin installed and loaded successfully", "name", pluginName)
+	logger.Info("Plugin installed successfully")
 	return nil
 }
-
-func HandleUninstallPlugin(logger *log.Logger, manager *Manager) error {
+func HandleUninstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	plugins, err := ListInstalledPlugins(logger)
 	if err != nil {
 		return fmt.Errorf("failed to list installed plugins: %w", err)
@@ -112,10 +89,11 @@ func HandleUninstallPlugin(logger *log.Logger, manager *Manager) error {
 	}
 
 	logger.Info("Plugin uninstalled and unloaded successfully", "name", selectedPlugin)
+	logger.Info("Plugin installed successfully")
 	return nil
 }
 
-func HandleListInstalledPlugins(logger *log.Logger) error {
+func HandleListInstalledPlugins(logger *logger.RateLimitedLogger) error {
 	plugins, err := ListInstalledPlugins(logger)
 	if err != nil {
 		return fmt.Errorf("failed to list installed plugins: %w", err)
@@ -133,7 +111,7 @@ func HandleListInstalledPlugins(logger *log.Logger) error {
 	return nil
 }
 
-func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
+func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	discoveredPlugins := manager.GetDiscoveredPlugins()
 	logger.Debug("Discovered plugins", "count", len(discoveredPlugins))
 
@@ -160,18 +138,24 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 
 	logger.Debug("Selected plugin", "name", selectedPlugin)
 
-	// Load the plugin
-	err = manager.LoadPlugin(selectedPlugin, logger)
-	if err != nil {
-		logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
-		return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
+	// Load the plugin if it's not already loaded
+	if !manager.IsPluginLoaded(selectedPlugin) {
+		err = manager.LoadPlugin(selectedPlugin)
+		if err != nil {
+			logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
+			return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
+		}
 	}
 
+	// Get the plugin menu
+	logger.Debug("Getting menu for selected plugin", "plugin", selectedPlugin)
 	menuResp, err := manager.GetPluginMenu(selectedPlugin)
 	if err != nil {
 		logger.Error("Error getting plugin menu", "error", err)
 		return fmt.Errorf("error getting plugin menu: %w", err)
 	}
+
+	logger.Debug("Received menu response", "dataSize", len(menuResp.MenuData))
 
 	var menuOptions []MenuOption
 	err = json.Unmarshal(menuResp.MenuData, &menuOptions)
@@ -180,6 +164,9 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("error unmarshalling menu data: %w", err)
 	}
 
+	logger.Debug("Unmarshalled menu options", "optionsCount", len(menuOptions))
+
+	// Present menu to user
 	var selectedCommand string
 	err = huh.NewSelect[string]().
 		Title("Choose an action").
@@ -198,6 +185,8 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 		return fmt.Errorf("error running menu: %w", err)
 	}
 
+	logger.Debug("User selected command", "command", selectedCommand)
+
 	// Execute the selected command
 	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, nil)
 	if err != nil {
@@ -209,7 +198,7 @@ func HandleRunPlugin(logger *log.Logger, manager *Manager) error {
 	return nil
 }
 
-func handleGitspaceCatalogInstall(logger *log.Logger) (string, error) {
+func handleGitspaceCatalogInstall(logger *logger.RateLimitedLogger) (string, error) {
 	owner := "ssotops"
 	repo := "gitspace-catalog"
 	catalog, err := fetchGitspaceCatalog(owner, repo)

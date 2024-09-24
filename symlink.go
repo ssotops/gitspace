@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/log"
+  "github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
-func createLocalSymlinks(logger *log.Logger, config *Config) {
+func createLocalSymlinks(logger *logger.RateLimitedLogger, config *Config) {
 	changes := make(map[string]string)
 	baseDir := config.Global.Path
 	repoDir := filepath.Join(getCacheDirOrDefault(logger), ".repositories", config.Global.SCM, config.Global.Owner)
@@ -43,7 +43,7 @@ func createLocalSymlinks(logger *log.Logger, config *Config) {
 	printSymlinkSummary("Created local symlinks", changes)
 }
 
-func createGlobalSymlinks(logger *log.Logger, config *Config) {
+func createGlobalSymlinks(logger *logger.RateLimitedLogger, config *Config) {
 	changes := make(map[string]string)
 	globalDir, err := getGlobalSymlinkDir(config)
 	if err != nil {
@@ -82,7 +82,7 @@ func createGlobalSymlinks(logger *log.Logger, config *Config) {
 	printSymlinkSummary("Created global symlinks", changes)
 }
 
-func deleteLocalSymlinks(logger *log.Logger, config *Config) {
+func deleteLocalSymlinks(logger *logger.RateLimitedLogger, config *Config) {
 	changes := make(map[string]string)
 	baseDir := config.Global.Path
 
@@ -109,7 +109,7 @@ func deleteLocalSymlinks(logger *log.Logger, config *Config) {
 	printSymlinkSummary("Deleted local symlinks", changes)
 }
 
-func deleteGlobalSymlinks(logger *log.Logger, config *Config) {
+func deleteGlobalSymlinks(logger *logger.RateLimitedLogger, config *Config) {
 	changes := make(map[string]string)
 	globalDir, err := getGlobalSymlinkDir(config)
 	if err != nil {

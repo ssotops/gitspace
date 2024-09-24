@@ -4,15 +4,26 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/charmbracelet/log"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"github.com/ssotops/gitspace/plugin"
 )
 
 func main() {
-	logger := initLogger()
+	logDir := filepath.Join("logs", "gitspace")
+	logger, err := logger.NewRateLimitedLogger(logDir, "gitspace")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
+		os.Exit(1)
+	}
+
 	logger.Info("Gitspace starting up")
+
+	// Set log level to Debug for detailed logging
+	logger.SetLogLevel(log.DebugLevel)
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
@@ -27,8 +38,8 @@ func main() {
 	logger.Debug("Config loaded successfully", "config_path", config.Global.Path)
 
 	// Initialize the plugin manager
-	pluginManager := plugin.NewManager()
-	err = pluginManager.DiscoverPlugins(logger)
+	pluginManager := plugin.NewManager(logger)
+	err = pluginManager.DiscoverPlugins()
 	if err != nil {
 		logger.Error("Failed to discover plugins", "error", err)
 	}

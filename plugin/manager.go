@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -20,16 +21,25 @@ type Manager struct {
 	plugins           map[string]*Plugin
 	discoveredPlugins map[string]string // map of plugin name to path
 	mu                sync.RWMutex
+	logger            *logger.RateLimitedLogger
 }
 
-func NewManager() *Manager {
-	return &Manager{
+func NewManager(l *logger.RateLimitedLogger) *Manager {
+	manager := &Manager{
 		plugins:           make(map[string]*Plugin),
 		discoveredPlugins: make(map[string]string),
+		logger:            l,
 	}
+
+	err := EnsurePluginDirectoryPermissions(l)
+	if err != nil {
+		l.Error("Failed to ensure plugin directory permissions during manager initialization", "error", err)
+	}
+
+	return manager
 }
 
-func (m *Manager) LoadPlugin(name string, logger *log.Logger) error {
+func (m *Manager) LoadPlugin(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -38,34 +48,39 @@ func (m *Manager) LoadPlugin(name string, logger *log.Logger) error {
 		return fmt.Errorf("plugin %s not discovered", name)
 	}
 
-	logger.Info("Attempting to load plugin", "name", name, "path", path)
+	m.logger.Info("Attempting to load plugin", "name", name, "path", path)
 
 	cmd := exec.Command(path)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
-
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
+	m.logger.Debug("Starting plugin process", "name", name, "path", path)
 	err = cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start plugin process: %w", err)
 	}
 
-	// Read stderr in a goroutine
+	// Use buffered writer for stdin
+	bufferedStdin := &bufferedWriteCloser{
+		Writer: bufio.NewWriter(stdin),
+		closer: stdin,
+	}
+
+	// Log stderr in a goroutine
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			logger.Info("Plugin stderr", "name", name, "message", scanner.Text())
+			m.logger.Debug("Plugin stderr", "name", name, "message", scanner.Text())
 		}
 	}()
 
@@ -73,30 +88,34 @@ func (m *Manager) LoadPlugin(name string, logger *log.Logger) error {
 		Name:   name,
 		Path:   path,
 		cmd:    cmd,
-		stdin:  stdin,
+		stdin:  bufferedStdin,
 		stdout: stdout,
+		logger: m.logger,
 	}
 
-	// Retrieve plugin info
-	logger.Debug("Retrieving plugin info", "name", name)
-	infoReq := &pb.PluginInfoRequest{}
-	resp, err := plugin.sendRequest(1, infoReq)
+	m.logger.Debug("Sending GetPluginInfo request", "name", name)
+	infoResp, err := plugin.sendRequest(1, &pb.PluginInfoRequest{})
 	if err != nil {
-		cmd.Process.Kill()
 		return fmt.Errorf("failed to get plugin info: %w", err)
 	}
+	m.logger.Debug("Received GetPluginInfo response", "name", name, "response", fmt.Sprintf("%+v", infoResp))
 
-	pluginInfo, ok := resp.(*pb.PluginInfo)
-	if !ok {
-		cmd.Process.Kill()
-		return fmt.Errorf("unexpected response type for GetPluginInfo: %T", resp)
+	// Get menu
+	m.logger.Debug("Getting plugin menu", "name", name)
+	menuResp, err := plugin.sendRequest(3, &pb.MenuRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get plugin menu: %w", err)
 	}
-	plugin.Version = pluginInfo.Version
+	menu, ok := menuResp.(*pb.MenuResponse)
+	if !ok {
+		return fmt.Errorf("unexpected response type for plugin menu")
+	}
+	m.logger.Debug("Plugin menu received", "name", name, "menuDataSize", len(menu.MenuData))
 
-	logger.Info("Plugin loaded successfully", "name", name, "version", plugin.Version)
-
+	// Store the plugin
 	m.plugins[name] = plugin
 
+	m.logger.Info("Plugin loaded successfully", "name", name)
 	return nil
 }
 
@@ -185,34 +204,39 @@ func (m *Manager) GetPluginMenu(pluginName string) (*pb.MenuResponse, error) {
 }
 
 func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, error) {
-	log.Printf("Sending request type %d to plugin %s", msgType, p.Name)
+	p.logger.Debug("Preparing to send request", "type", msgType, "name", p.Name)
+
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+	p.logger.Debug("Marshaled request", "data", fmt.Sprintf("%x", data))
 
+	p.logger.Debug("Writing message type", "type", msgType)
 	if _, err := p.stdin.Write([]byte{byte(msgType)}); err != nil {
 		return nil, fmt.Errorf("failed to write message type: %w", err)
 	}
 
+	p.logger.Debug("Writing message length", "length", len(data))
 	if err := binary.Write(p.stdin, binary.LittleEndian, uint32(len(data))); err != nil {
 		return nil, fmt.Errorf("failed to write message length: %w", err)
 	}
 
+	p.logger.Debug("Writing message data", "data", fmt.Sprintf("%x", data))
 	if _, err := p.stdin.Write(data); err != nil {
 		return nil, fmt.Errorf("failed to write message data: %w", err)
 	}
 
-	// Flush stdin to ensure the message is sent immediately
-	if f, ok := p.stdin.(*os.File); ok {
-		f.Sync()
+	if err := p.stdin.(*bufferedWriteCloser).Flush(); err != nil {
+		p.logger.Warn("Failed to flush stdin", "error", err)
 	}
 
-	log.Printf("Waiting for response from plugin %s", p.Name)
+	p.logger.Debug("Waiting for response", "name", p.Name)
 	respType, respData, err := readMessage(p.stdout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+	p.logger.Debug("Received response", "type", respType, "dataLength", len(respData), "rawData", fmt.Sprintf("%x", respData))
 
 	var resp proto.Message
 	switch respType {
@@ -231,7 +255,7 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	log.Printf("Received response from plugin %s", p.Name)
+	p.logger.Debug("Unmarshalled response", "content", fmt.Sprintf("%+v", resp))
 	return resp, nil
 }
 
@@ -248,16 +272,16 @@ func (m *Manager) GetDiscoveredPlugins() map[string]string {
 	return discoveredPlugins
 }
 
-func (m *Manager) LoadAllPlugins(logger *log.Logger) error {
-	err := m.DiscoverPlugins(logger)
+func (m *Manager) LoadAllPlugins() error {
+	err := m.DiscoverPlugins()
 	if err != nil {
 		return fmt.Errorf("failed to discover plugins: %w", err)
 	}
 
 	for name := range m.discoveredPlugins {
-		err := m.LoadPlugin(name, logger)
+		err := m.LoadPlugin(name)
 		if err != nil {
-			logger.Warn("Failed to load plugin", "name", name, "error", err)
+			m.logger.Warn("Failed to load plugin", "name", name, "error", err)
 		}
 	}
 
@@ -267,7 +291,7 @@ func (m *Manager) LoadAllPlugins(logger *log.Logger) error {
 // EnsurePluginDirectoryPermissions ensures that the plugins directory has the correct permissions and ownership
 // Without this, we'll see logs like this (which effectively means the plugin is not loaded):
 // WARN <plugin/manager.go:222> Failed to load plugin name=hello-world error="failed to start plugin process: fork/exec /Users/alechp/.ssot/gitspace/plugins/hello-world/hello-world: permission denied"
-func EnsurePluginDirectoryPermissions(logger *log.Logger) error {
+func EnsurePluginDirectoryPermissions(logger *logger.RateLimitedLogger) error {
 	pluginsDir, err := getPluginsDir()
 	if err != nil {
 		return fmt.Errorf("failed to get plugins directory: %w", err)
@@ -307,7 +331,7 @@ func EnsurePluginDirectoryPermissions(logger *log.Logger) error {
 	return nil
 }
 
-func (m *Manager) DiscoverPlugins(logger *log.Logger) error {
+func (m *Manager) DiscoverPlugins() error {
 	pluginsDir, err := getPluginsDir()
 	if err != nil {
 		return fmt.Errorf("failed to get plugins directory: %w", err)
@@ -323,31 +347,61 @@ func (m *Manager) DiscoverPlugins(logger *log.Logger) error {
 			pluginName := entry.Name()
 			pluginPath := filepath.Join(pluginsDir, pluginName, pluginName)
 			m.discoveredPlugins[pluginName] = pluginPath
-			logger.Debug("Discovered plugin", "name", pluginName, "path", pluginPath)
+			m.logger.Debug("Discovered plugin", "name", pluginName, "path", pluginPath)
 		}
 	}
+
+	m.logger.Debug("Total discovered plugins", "count", len(m.discoveredPlugins))
 
 	return nil
 }
 
 func readMessage(r io.Reader) (uint32, []byte, error) {
-	var msgType [1]byte
-	_, err := r.Read(msgType[:])
+	var msgTypeByte [1]byte
+	n, err := r.Read(msgTypeByte[:])
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read message type: %w", err)
 	}
+	msgType := uint32(msgTypeByte[0])
+	log.Debug("Read message type", "type", msgType, "bytesRead", n, "rawByte", fmt.Sprintf("%x", msgTypeByte))
 
 	var msgLen uint32
 	err = binary.Read(r, binary.LittleEndian, &msgLen)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read message length: %w", err)
 	}
+	log.Debug("Read message length", "length", msgLen)
+
+	if msgLen > 10*1024*1024 { // 10 MB limit, adjust as needed
+		return 0, nil, fmt.Errorf("message too large: %d bytes", msgLen)
+	}
 
 	data := make([]byte, msgLen)
-	_, err = io.ReadFull(r, data)
+	n, err = io.ReadFull(r, data)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read message data: %w", err)
 	}
+	log.Debug("Read message data", "bytesRead", n, "data", fmt.Sprintf("%x", data))
 
-	return uint32(msgType[0]), data, nil
+	return msgType, data, nil
+}
+
+func (m *Manager) AddDiscoveredPlugin(name, path string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.discoveredPlugins[name] = path
+}
+
+func (m *Manager) IsPluginLoaded(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, exists := m.plugins[name]
+	return exists
+}
+
+func (bwc *bufferedWriteCloser) Close() error {
+	if err := bwc.Flush(); err != nil {
+		return err
+	}
+	return bwc.closer.Close()
 }

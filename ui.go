@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"github.com/ssotops/gitspace/plugin"
 )
 
@@ -29,7 +29,7 @@ func printWelcomeMessage() {
 	fmt.Println()
 }
 
-func handleMainMenu(logger *log.Logger, config **Config, pluginManager *plugin.Manager) bool {
+func handleMainMenu(logger *logger.RateLimitedLogger, config **Config, pluginManager *plugin.Manager) bool {
 	logger.Debug("Entering handleMainMenu")
 	options := []huh.Option[string]{
 		huh.NewOption("Repositories", "repositories"),
@@ -77,7 +77,7 @@ func handleMainMenu(logger *log.Logger, config **Config, pluginManager *plugin.M
 	return false
 }
 
-func handleRepositoriesCommand(logger *log.Logger, config *Config) bool {
+func handleRepositoriesCommand(logger *logger.RateLimitedLogger, config *Config) bool {
 	if !ensureConfig(logger, &config) {
 		return false
 	}
@@ -199,7 +199,7 @@ func printSummaryTable(config *Config, results map[string]*RepoResult, repoDir s
 	fmt.Println(summaryStyle.Render(fmt.Sprintf("  Global symlinks created: %d", globalSymlinks)))
 }
 
-func handleConfigPathsCommand(logger *log.Logger) {
+func handleConfigPathsCommand(logger *logger.RateLimitedLogger) {
 	cacheDir, err := getCacheDir()
 	if err != nil {
 		logger.Error("Error getting cache directory", "error", err)
@@ -251,7 +251,7 @@ func handleConfigPathsCommand(logger *log.Logger) {
 	fmt.Println() // Add an extra newline for spacing
 }
 
-func handleGitspaceCommand(logger *log.Logger, config **Config) {
+func handleGitspaceCommand(logger *logger.RateLimitedLogger, config **Config) {
 	for {
 		var choice string
 		err := huh.NewSelect[string]().
@@ -298,7 +298,7 @@ func handleGitspaceCommand(logger *log.Logger, config **Config) {
 	}
 }
 
-func handleSymlinksCommand(logger *log.Logger, config *Config) {
+func handleSymlinksCommand(logger *logger.RateLimitedLogger, config *Config) {
 	if !ensureConfig(logger, &config) {
 		return
 	}
@@ -338,7 +338,7 @@ func handleSymlinksCommand(logger *log.Logger, config *Config) {
 	}
 }
 
-func ensureConfig(logger *log.Logger, config **Config) bool {
+func ensureConfig(logger *logger.RateLimitedLogger, config **Config) bool {
 	if *config == nil || (*config).Global.Path == "" {
 		logger.Warn("No valid config loaded")
 		var choice string
@@ -377,7 +377,7 @@ func ensureConfig(logger *log.Logger, config **Config) bool {
 	return true
 }
 
-func handlePluginsCommand(logger *log.Logger, config *Config, pluginManager *plugin.Manager) {
+func handlePluginsCommand(logger *logger.RateLimitedLogger, config *Config, pluginManager *plugin.Manager) {
 	for {
 		var subChoice string
 		err := huh.NewSelect[string]().
