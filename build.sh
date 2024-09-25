@@ -2,6 +2,17 @@
 
 set -e
 
+SKIP_VENDOR=false
+
+# Parse command line arguments
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --skip-vendor) SKIP_VENDOR=true ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
+
 # Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -67,6 +78,22 @@ error() {
     gum style --foreground 196 "$(gum style --bold "✗")" "$1" >&2
 }
 
+# Function to handle vendoring
+handle_vendoring() {
+    if [ "$SKIP_VENDOR" = true ]; then
+        log "Skipping vendor directory sync (--skip-vendor flag used)"
+        return
+    fi
+    log "Syncing vendor directory..."
+    go mod vendor
+    if [ $? -ne 0 ]; then
+        error "Failed to sync vendor directory"
+        exit 1
+    fi
+    success "Vendor directory synced successfully"
+    changes+=("Vendor directory synced")
+}
+
 # Print header
 print_header
 
@@ -94,6 +121,9 @@ else
     error "Failed to tidy go.mod."
     exit 1
 fi
+
+# Handle vendoring
+handle_vendoring
 
 # Build the project
 log "Building the project..."

@@ -13,7 +13,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pelletier/go-toml/v2 v2.2.3
-	github.com/ssotops/gitspace-plugin-sdk v0.0.0-20240924011716-b662f0efe9f7
+	github.com/ssotops/gitspace-plugin-sdk v0.0.0-20240924232006-2e6132d051ca
 	golang.org/x/oauth2 v0.23.0
 	google.golang.org/protobuf v1.34.2
 )
@@ -69,4 +69,4 @@ exclude github.com/ssotops/gitspace/examples/plugins v0.0.0
 
 replace github.com/ssotops/gitspace/lib => ./lib
 
-replace github.com/ssotops/gitspace-plugin-sdk => ./gs/gitspace-plugin-sdk
+replace github.com/ssotops/gitspace-plugin-sdk => github.com/ssotops/gitspace-plugin-sdk v0.0.0-20240924232006-2e6132d051ca

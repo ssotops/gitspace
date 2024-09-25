@@ -29,6 +29,18 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Build Catalog Plugins
+log "Building gitspace-catalog plugins..."
+(
+    cd ./gs/gitspace-catalog/plugins
+    ./build-all-plugins.sh
+)
+
+if [ $? -ne 0 ]; then
+    error "Failed to build gitspace-catalog plugins"
+    exit 1
+fi
+
 # Update Gitspace dependencies
 log "Updating Gitspace dependencies..."
 go get -u github.com/ssotops/gitspace-plugin-sdk

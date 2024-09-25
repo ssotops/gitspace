@@ -129,3 +129,28 @@ You can upgrade Gitspace to the latest version using the built-in upgrade functi
 
 In the `[global]` section of your `gs.toml` file, you can also set:
 - `empty_repo_initial_branch`: Specifies the initial branch name for empty repositories (default is "master").
+
+## Building and Development
+
+Gitspace provides two build scripts for different purposes:
+
+### ecosystem-build.sh
+
+This script is used to build the entire Gitspace ecosystem, including the Gitspace Plugin SDK and all plugins from the Gitspace Catalog. It's ideal for comprehensive builds and updates.
+
+To run:
+[ecosystem-build.sh command]
+
+### build.sh
+
+This script is used for building Gitspace itself. It's faster and more suitable for regular development tasks.
+
+To run:
+[build.sh command]
+
+You can skip the vendoring step by using the `--skip-vendor` flag:
+[build.sh command with --skip-vendor flag]
+
+Note on `go mod vendor`: We use `go mod vendor` to create a `vendor` directory containing all the dependencies. This ensures consistent builds across different environments and can speed up build times. It's particularly useful for CI/CD pipelines and when working in air-gapped environments. However, in some development scenarios, you might want to skip this step to save time, hence the `--skip-vendor` option.
+
+Choose the appropriate build script based on your current development needs. Use `ecosystem-build.sh` for full system updates and `build.sh` for quicker, Gitspace-specific builds.
