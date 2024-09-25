@@ -4,10 +4,12 @@ package lib
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -207,4 +209,62 @@ func FetchGitspaceCatalog(owner, repo string) (*GitspaceCatalog, error) {
 	}
 
 	return &catalog, nil
+}
+
+func DownloadGitHubDirectory(owner, repo, path, destDir string) error {
+	ctx := context.Background()
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return fmt.Errorf("GITHUB_TOKEN environment variable not set")
+	}
+
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	client := github.NewClient(tc)
+
+	_, directoryContent, _, err := client.Repositories.GetContents(ctx, owner, repo, path, nil)
+	if err != nil {
+		return fmt.Errorf("error fetching directory contents: %v", err)
+	}
+
+	for _, file := range directoryContent {
+		if *file.Type == "dir" {
+			// ... (directory handling code remains the same)
+		} else {
+			fileContent, _, resp, err := client.Repositories.GetContents(ctx, owner, repo, *file.Path, nil)
+			if err != nil {
+				return fmt.Errorf("error fetching file content: %v", err)
+			}
+
+			// Check if we've exceeded the rate limit
+			if resp.Rate.Remaining == 0 {
+				return fmt.Errorf("GitHub API rate limit exceeded. Reset at %v", resp.Rate.Reset)
+			}
+
+			var content []byte
+			switch fileContent.GetEncoding() {
+			case "base64":
+				content, err = base64.StdEncoding.DecodeString(*fileContent.Content)
+				if err != nil {
+					return fmt.Errorf("error decoding base64 content: %v", err)
+				}
+			case "", "none":
+				// If encoding is not specified or set to "none", assume it's raw content
+				content = []byte(*fileContent.Content)
+			default:
+				return fmt.Errorf("unsupported content encoding: %s", fileContent.GetEncoding())
+			}
+
+			filePath := filepath.Join(destDir, *file.Name)
+			err = os.WriteFile(filePath, content, 0644)
+			if err != nil {
+				return fmt.Errorf("error writing file: %v", err)
+			}
+		}
+	}
+
+	return nil
 }

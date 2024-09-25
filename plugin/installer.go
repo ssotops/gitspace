@@ -11,6 +11,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/ssotops/gitspace-plugin-sdk/logger"
+	"github.com/ssotops/gitspace/lib"
 )
 
 type PluginManifest struct {
@@ -58,19 +59,16 @@ func InstallPlugin(logger *logger.RateLimitedLogger, manager *Manager, source st
 	}
 	logger.Debug("Plugins directory", "path", pluginsDir)
 
+	isGitspaceCatalog := strings.HasPrefix(source, "https://github.com/ssotops/gitspace-catalog/tree/main/")
 	isRemote := strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://")
-	isCatalog := strings.HasPrefix(source, "catalog://")
-	logger.Debug("Source type", "isRemote", isRemote, "isCatalog", isCatalog)
-
-	if isCatalog {
-		catalogItem := strings.TrimPrefix(source, "catalog://")
-		logger.Debug("Installing from Gitspace Catalog", "item", catalogItem)
-		return installFromGitspaceCatalog(logger, catalogItem)
-	}
+	logger.Debug("Source type", "isRemote", isRemote, "isGitspaceCatalog", isGitspaceCatalog)
 
 	var sourceDir string
 
-	if isRemote {
+	if isGitspaceCatalog {
+		logger.Debug("Installing from Gitspace Catalog", "source", source)
+		return installFromGitspaceCatalog(logger, manager, source)
+	} else if isRemote {
 		logger.Debug("Processing remote source")
 		tempDir, err := os.MkdirTemp("", "gitspace-plugin-*")
 		if err != nil {
@@ -274,15 +272,41 @@ func copyDir(src string, dst string) error {
 	})
 }
 
-func fetchGitspaceCatalog(owner, repo string) (*GitspaceCatalog, error) {
-	// TODO: Implement GitHub API call to fetch catalog
-	return &GitspaceCatalog{
-		Plugins: make(map[string]Plugin),
-	}, nil
-}
+func installFromGitspaceCatalog(logger *logger.RateLimitedLogger, manager *Manager, source string) error {
+	logger.Debug("Starting installation from Gitspace Catalog", "source", source)
 
-func installFromGitspaceCatalog(logger *logger.RateLimitedLogger, catalogItem string) error {
-	// For now, we'll just log that this feature is not implemented
-	logger.Info("Installation from Gitspace Catalog is not implemented yet")
-	return fmt.Errorf("installation from Gitspace Catalog is not implemented yet")
+	// Extract owner, repo, and path from the GitHub URL
+	parts := strings.Split(strings.TrimPrefix(source, "https://github.com/"), "/")
+	if len(parts) < 5 { // owner/repo/tree/branch/path
+		return fmt.Errorf("invalid Gitspace Catalog URL: %s", source)
+	}
+
+	owner := parts[0]
+	repo := parts[1]
+	path := strings.Join(parts[4:], "/")
+
+	logger.Debug("Extracted repository details", "owner", owner, "repo", repo, "path", path)
+
+	// Create a temporary directory for the plugin
+	tempDir, err := os.MkdirTemp("", "gitspace-plugin-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	logger.Debug("Created temporary directory", "path", tempDir)
+
+	// Download the plugin files
+	logger.Debug("Downloading plugin files")
+	err = lib.DownloadGitHubDirectory(owner, repo, path, tempDir)
+	if err != nil {
+		logger.Error("Failed to download plugin files", "error", err)
+		return fmt.Errorf("failed to download plugin files: %w", err)
+	}
+
+	logger.Debug("Successfully downloaded plugin files")
+
+	// Install the plugin using the existing InstallPlugin function
+	logger.Debug("Installing plugin from temporary directory")
+	return InstallPlugin(logger, manager, tempDir)
 }
