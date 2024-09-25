@@ -8,9 +8,11 @@ import (
 	"github.com/ssotops/gitspace-plugin-sdk/gsplug"
 	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	pb "github.com/ssotops/gitspace-plugin-sdk/proto"
+	"github.com/ssotops/gitspace/lib"
 )
 
 func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
+	logger.Debug("Entering HandleInstallPlugin")
 	var installChoice string
 	err := huh.NewSelect[string]().
 		Title("Choose installation type").
@@ -23,15 +25,20 @@ func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) err
 		Run()
 
 	if err != nil {
+		logger.Error("Error getting installation type", "error", err)
 		return fmt.Errorf("error getting installation type: %w", err)
 	}
+
+	logger.Debug("Installation type selected", "choice", installChoice)
 
 	var source string
 
 	switch installChoice {
 	case "catalog":
+		logger.Debug("Handling Gitspace Catalog installation")
 		source, err = handleGitspaceCatalogInstall(logger)
 		if err != nil {
+			logger.Error("Error selecting from Gitspace Catalog", "error", err)
 			return fmt.Errorf("error selecting from Gitspace Catalog: %w", err)
 		}
 	case "local":
@@ -49,8 +56,10 @@ func HandleInstallPlugin(logger *logger.RateLimitedLogger, manager *Manager) err
 		}
 	}
 
+	logger.Debug("Proceeding with plugin installation", "source", source)
 	err = InstallPlugin(logger, manager, source)
 	if err != nil {
+		logger.Error("Failed to install plugin", "error", err)
 		return fmt.Errorf("failed to install plugin: %w", err)
 	}
 
@@ -231,34 +240,51 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 }
 
 func handleGitspaceCatalogInstall(logger *logger.RateLimitedLogger) (string, error) {
-	owner := "ssotops"
-	repo := "gitspace-catalog"
-	catalog, err := fetchGitspaceCatalog(owner, repo)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch Gitspace Catalog: %w", err)
-	}
+    logger.Debug("Entering handleGitspaceCatalogInstall")
+    owner := "ssotops"
+    repo := "gitspace-catalog"
+    logger.Debug("Fetching Gitspace Catalog", "owner", owner, "repo", repo)
+    catalog, err := lib.FetchGitspaceCatalog(owner, repo)
+    if err != nil {
+        logger.Error("Failed to fetch Gitspace Catalog", "error", err)
+        return "", fmt.Errorf("failed to fetch Gitspace Catalog: %w", err)
+    }
 
-	var options []huh.Option[string]
-	for name := range catalog.Plugins {
-		options = append(options, huh.NewOption(name, "catalog://"+name))
-	}
+    logger.Debug("Successfully fetched Gitspace Catalog")
 
-	if len(options) == 0 {
-		return "", fmt.Errorf("no plugins found in the catalog")
-	}
+    var options []huh.Option[string]
+    for name, plugin := range catalog.Plugins {
+        options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", name, plugin.Description), name))
+    }
 
-	var selectedItem string
-	err = huh.NewSelect[string]().
-		Title("Select a plugin to install").
-		Options(options...).
-		Value(&selectedItem).
-		Run()
+    if len(options) == 0 {
+        logger.Warn("No plugins found in the catalog")
+        return "", fmt.Errorf("no plugins found in the catalog")
+    }
 
-	if err != nil {
-		return "", fmt.Errorf("failed to select item: %w", err)
-	}
+    logger.Debug("Presenting plugin options to user", "optionCount", len(options))
 
-	return selectedItem, nil
+    var selectedItem string
+    err = huh.NewSelect[string]().
+        Title("Select a plugin to install").
+        Options(options...).
+        Value(&selectedItem).
+        Run()
+
+    if err != nil {
+        logger.Error("Failed to select item", "error", err)
+        return "", fmt.Errorf("failed to select item: %w", err)
+    }
+
+    logger.Debug("User selected plugin", "selectedItem", selectedItem)
+
+    // Construct the full GitHub URL for the selected plugin
+    selectedPlugin := catalog.Plugins[selectedItem]
+    pluginURL := fmt.Sprintf("https://github.com/%s/%s/tree/main/%s", owner, repo, selectedPlugin.Path)
+
+    logger.Debug("Constructed plugin URL", "url", pluginURL)
+
+    return pluginURL, nil
 }
 
 func createOptionsFromStrings(items []string) []huh.Option[string] {
