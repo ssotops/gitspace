@@ -69,4 +69,4 @@ exclude github.com/ssotops/gitspace/examples/plugins v0.0.0
 
 replace github.com/ssotops/gitspace/lib => ./lib
 
-replace github.com/ssotops/gitspace-plugin-sdk => github.com/ssotops/gitspace-plugin-sdk v0.0.0-20240924232006-2e6132d051ca
+replace github.com/ssotops/gitspace-plugin-sdk => ./gs/gitspace-plugin-sdk

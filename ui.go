@@ -383,10 +383,10 @@ func handlePluginsCommand(logger *logger.RateLimitedLogger, config *Config, plug
 		err := huh.NewSelect[string]().
 			Title("Choose a plugins action").
 			Options(
+				huh.NewOption("Run Plugin", "run"),
 				huh.NewOption("Install Plugin", "install"),
 				huh.NewOption("Uninstall Plugin", "uninstall"),
 				huh.NewOption("Print Installed Plugins", "print"),
-				huh.NewOption("Run Plugin", "run"),
 				huh.NewOption("Go back", "back"),
 			).
 			Value(&subChoice).
@@ -398,6 +398,10 @@ func handlePluginsCommand(logger *logger.RateLimitedLogger, config *Config, plug
 		}
 
 		switch subChoice {
+		case "run":
+			if err := plugin.HandleRunPlugin(logger, pluginManager); err != nil {
+				logger.Error("Error running plugin", "error", err)
+			}
 		case "install":
 			plugin.HandleInstallPlugin(logger, pluginManager)
 		case "uninstall":
@@ -406,8 +410,6 @@ func handlePluginsCommand(logger *logger.RateLimitedLogger, config *Config, plug
 			if err := plugin.HandleListInstalledPlugins(logger); err != nil {
 				logger.Error("Failed to list installed plugins", "error", err)
 			}
-		case "run":
-			plugin.HandleRunPlugin(logger, pluginManager)
 		case "back":
 			return
 		default:
