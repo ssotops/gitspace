@@ -194,12 +194,12 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 
 		if err != nil {
 			logger.Error("Error running menu", "error", err)
-			return fmt.Errorf("error running menu: %w", err)
+			continue
 		}
 
 		if selectedCommand == "exit" {
 			logger.Debug("User chose to exit plugin")
-			break
+			return nil
 		}
 
 		logger.Debug("User selected command", "command", selectedCommand)
@@ -215,7 +215,7 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 
 		if selectedOption == nil {
 			logger.Error("Selected command not found in menu options")
-			return fmt.Errorf("selected command not found in menu options")
+			continue
 		}
 
 		// Collect parameters
@@ -229,7 +229,7 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 
 			if err != nil {
 				logger.Error("Error getting parameter input", "param", param.Name, "error", err)
-				return fmt.Errorf("error getting parameter input for %s: %w", param.Name, err)
+				continue
 			}
 
 			params[param.Name] = value
@@ -238,10 +238,14 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 		result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, params)
 		if err != nil {
 			logger.Error("Error executing command", "error", err)
-			return fmt.Errorf("error executing command: %w", err)
+			// Display error to user
+			fmt.Printf("Error: %v\n", err)
+			continue
 		}
 
 		logger.Info("Command result", "result", result)
+		// Display result to user
+		fmt.Printf("Result: %s\n", result)
 
 		// Ask if the user wants to perform another action
 		var continueChoice string
@@ -261,11 +265,9 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 
 		if continueChoice == "no" {
 			logger.Debug("User chose to return to main menu")
-			break
+			return nil
 		}
 	}
-
-	return nil
 }
 
 func handleGitspaceCatalogInstall(logger *logger.RateLimitedLogger) (string, error) {
