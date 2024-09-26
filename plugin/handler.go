@@ -122,16 +122,16 @@ func HandleListInstalledPlugins(logger *logger.RateLimitedLogger) error {
 }
 
 func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
-	discoveredPlugins := manager.GetDiscoveredPlugins()
-	logger.Debug("Discovered plugins", "count", len(discoveredPlugins))
+	filteredPlugins := manager.GetFilteredPlugins()
+	logger.Debug("Discovered plugins (filtered)", "count", len(filteredPlugins))
 
-	if len(discoveredPlugins) == 0 {
+	if len(filteredPlugins) == 0 {
 		logger.Info("No plugins discovered")
 		return nil
 	}
 
 	var pluginNames []string
-	for name := range discoveredPlugins {
+	for name := range filteredPlugins {
 		pluginNames = append(pluginNames, name)
 	}
 
@@ -338,4 +338,14 @@ func getPluginNames(plugins map[string]*Plugin) []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+func filterPlugins(plugins map[string]string) map[string]string {
+	filtered := make(map[string]string)
+	for name, path := range plugins {
+		if name != "data" {
+			filtered[name] = path
+		}
+	}
+	return filtered
 }
