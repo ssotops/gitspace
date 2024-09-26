@@ -1,8 +1,12 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/charmbracelet/huh"
 	"github.com/ssotops/gitspace-plugin-sdk/gsplug"
@@ -122,152 +126,182 @@ func HandleListInstalledPlugins(logger *logger.RateLimitedLogger) error {
 }
 
 func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
-	filteredPlugins := manager.GetFilteredPlugins()
-	logger.Debug("Discovered plugins (filtered)", "count", len(filteredPlugins))
+    filteredPlugins := manager.GetFilteredPlugins()
+    logger.Debug("Discovered plugins (filtered)", "count", len(filteredPlugins))
 
-	if len(filteredPlugins) == 0 {
-		logger.Info("No plugins discovered")
-		return nil
-	}
+    if len(filteredPlugins) == 0 {
+        logger.Info("No plugins discovered")
+        return nil
+    }
 
-	var pluginNames []string
-	for name := range filteredPlugins {
-		pluginNames = append(pluginNames, name)
-	}
+    var pluginNames []string
+    for name := range filteredPlugins {
+        pluginNames = append(pluginNames, name)
+    }
 
-	var selectedPlugin string
-	err := huh.NewSelect[string]().
-		Title("Choose a plugin to run").
-		Options(createOptionsFromStrings(pluginNames)...).
-		Value(&selectedPlugin).
-		Run()
+    var selectedPlugin string
+    err := huh.NewSelect[string]().
+        Title("Choose a plugin to run").
+        Options(createOptionsFromStrings(pluginNames)...).
+        Value(&selectedPlugin).
+        Run()
 
-	if err != nil {
-		return fmt.Errorf("error selecting plugin: %w", err)
-	}
+    if err != nil {
+        return fmt.Errorf("error selecting plugin: %w", err)
+    }
 
-	logger.Debug("Selected plugin", "name", selectedPlugin)
+    logger.Debug("Selected plugin", "name", selectedPlugin)
 
-	// Load the plugin if it's not already loaded
-	if !manager.IsPluginLoaded(selectedPlugin) {
-		err = manager.LoadPlugin(selectedPlugin)
-		if err != nil {
-			logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
-			return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
-		}
-	}
+    // Load the plugin if it's not already loaded
+    if !manager.IsPluginLoaded(selectedPlugin) {
+        err = manager.LoadPlugin(selectedPlugin)
+        if err != nil {
+            logger.Error("Failed to load plugin", "name", selectedPlugin, "error", err)
+            return fmt.Errorf("failed to load plugin %s: %w", selectedPlugin, err)
+        }
+    }
 
-	for {
-		// Get the plugin menu
-		logger.Debug("Getting menu for selected plugin", "plugin", selectedPlugin)
-		menuResp, err := manager.GetPluginMenu(selectedPlugin)
-		if err != nil {
-			logger.Error("Error getting plugin menu", "error", err)
-			return fmt.Errorf("error getting plugin menu: %w", err)
-		}
+    // Create a context that we can cancel
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
 
-		logger.Debug("Received menu response", "dataSize", len(menuResp.MenuData))
+    // Run the plugin loop
+    return runPluginLoop(ctx, logger, manager, selectedPlugin)
+}
 
-		var menuOptions []gsplug.MenuOption
-		err = json.Unmarshal(menuResp.MenuData, &menuOptions)
-		if err != nil {
-			logger.Error("Error unmarshalling menu data", "error", err)
-			return fmt.Errorf("error unmarshalling menu data: %w", err)
-		}
+func runPluginLoop(ctx context.Context, logger *logger.RateLimitedLogger, manager *Manager, selectedPlugin string) error {
+    // Set up a separate channel for interrupt signals
+    interruptChan := make(chan os.Signal, 1)
+    signal.Notify(interruptChan, os.Interrupt, syscall.SIGTERM)
+    defer signal.Stop(interruptChan)
 
-		logger.Debug("Unmarshalled menu options", "optionsCount", len(menuOptions))
+    for {
+        // Create a channel for menu selection
+        menuDone := make(chan struct{})
+        var selectedCommand string
 
-		// Present menu to user
-		var selectedCommand string
-		err = huh.NewSelect[string]().
-			Title("Choose an action").
-			Options(func() []huh.Option[string] {
-				options := make([]huh.Option[string], len(menuOptions)+1)
-				for i, opt := range menuOptions {
-					options[i] = huh.NewOption(opt.Label, opt.Command)
-				}
-				options[len(menuOptions)] = huh.NewOption("Exit plugin", "exit")
-				return options
-			}()...).
-			Value(&selectedCommand).
-			Run()
+        // Run menu selection in a goroutine
+        go func() {
+            defer close(menuDone)
 
-		if err != nil {
-			logger.Error("Error running menu", "error", err)
-			continue
-		}
+            // Get the plugin menu
+            logger.Debug("Getting menu for selected plugin", "plugin", selectedPlugin)
+            menuResp, err := manager.GetPluginMenu(selectedPlugin)
+            if err != nil {
+                logger.Error("Error getting plugin menu", "error", err)
+                return
+            }
 
-		if selectedCommand == "exit" {
-			logger.Debug("User chose to exit plugin")
-			return nil
-		}
+            logger.Debug("Received menu response", "dataSize", len(menuResp.MenuData))
 
-		logger.Debug("User selected command", "command", selectedCommand)
+            var menuOptions []gsplug.MenuOption
+            err = json.Unmarshal(menuResp.MenuData, &menuOptions)
+            if err != nil {
+                logger.Error("Error unmarshalling menu data", "error", err)
+                return
+            }
 
-		// Find the selected command in the menu options
-		var selectedOption *gsplug.MenuOption
-		for i, opt := range menuOptions {
-			if opt.Command == selectedCommand {
-				selectedOption = &menuOptions[i]
-				break
-			}
-		}
+            logger.Debug("Unmarshalled menu options", "optionsCount", len(menuOptions))
 
-		if selectedOption == nil {
-			logger.Error("Selected command not found in menu options")
-			continue
-		}
+            // Present menu to user
+            err = huh.NewSelect[string]().
+                Title("Choose an action").
+                Options(func() []huh.Option[string] {
+                    options := make([]huh.Option[string], len(menuOptions)+1)
+                    for i, opt := range menuOptions {
+                        options[i] = huh.NewOption(opt.Label, opt.Command)
+                    }
+                    options[len(menuOptions)] = huh.NewOption("Exit plugin", "exit")
+                    return options
+                }()...).
+                Value(&selectedCommand).
+                Run()
 
-		// Collect parameters
-		params := make(map[string]string)
-		for _, param := range selectedOption.Parameters {
-			var value string
-			err := huh.NewInput().
-				Title(fmt.Sprintf("%s (%s)", param.Name, param.Description)).
-				Value(&value).
-				Run()
+            if err != nil {
+                if err == huh.ErrUserAborted {
+                    logger.Debug("User aborted menu selection")
+                    selectedCommand = "exit"
+                } else {
+                    logger.Error("Error running menu", "error", err)
+                }
+                return
+            }
+        }()
 
-			if err != nil {
-				logger.Error("Error getting parameter input", "param", param.Name, "error", err)
-				continue
-			}
+        // Wait for either menu selection to complete, context cancellation, or interrupt signal
+        select {
+        case <-ctx.Done():
+            return nil
+        case <-interruptChan:
+            logger.Info("Received interrupt signal. Returning to previous menu...")
+            return nil
+        case <-menuDone:
+            // Menu selection completed
+            if selectedCommand == "exit" {
+                logger.Debug("User chose to exit plugin")
+                return nil
+            }
 
-			params[param.Name] = value
-		}
+            // Execute the selected command
+            if err := executePluginCommand(logger, manager, selectedPlugin, selectedCommand); err != nil {
+                logger.Error("Error executing command", "error", err)
+                fmt.Printf("Error: %v\n", err)
+            }
+        }
+    }
+}
 
-		result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, params)
-		if err != nil {
-			logger.Error("Error executing command", "error", err)
-			// Display error to user
-			fmt.Printf("Error: %v\n", err)
-			continue
-		}
+func executePluginCommand(logger *logger.RateLimitedLogger, manager *Manager, selectedPlugin, selectedCommand string) error {
+    // Get the plugin menu again to find the selected command
+    menuResp, err := manager.GetPluginMenu(selectedPlugin)
+    if err != nil {
+        return fmt.Errorf("error getting plugin menu: %w", err)
+    }
 
-		logger.Info("Command result", "result", result)
-		// Display result to user
-		fmt.Printf("Result: %s\n", result)
+    var menuOptions []gsplug.MenuOption
+    err = json.Unmarshal(menuResp.MenuData, &menuOptions)
+    if err != nil {
+        return fmt.Errorf("error unmarshalling menu data: %w", err)
+    }
 
-		// Ask if the user wants to perform another action
-		var continueChoice string
-		err = huh.NewSelect[string]().
-			Title("Do you want to perform another action with this plugin?").
-			Options(
-				huh.NewOption("Yes", "yes"),
-				huh.NewOption("No, return to main menu", "no"),
-			).
-			Value(&continueChoice).
-			Run()
+    // Find the selected command in the menu options
+    var selectedOption *gsplug.MenuOption
+    for i, opt := range menuOptions {
+        if opt.Command == selectedCommand {
+            selectedOption = &menuOptions[i]
+            break
+        }
+    }
 
-		if err != nil {
-			logger.Error("Error getting continue choice", "error", err)
-			return fmt.Errorf("error getting continue choice: %w", err)
-		}
+    if selectedOption == nil {
+        return fmt.Errorf("selected command not found in menu options")
+    }
 
-		if continueChoice == "no" {
-			logger.Debug("User chose to return to main menu")
-			return nil
-		}
-	}
+    // Collect parameters
+    params := make(map[string]string)
+    for _, param := range selectedOption.Parameters {
+        var value string
+        err := huh.NewInput().
+            Title(fmt.Sprintf("%s (%s)", param.Name, param.Description)).
+            Value(&value).
+            Run()
+
+        if err != nil {
+            return fmt.Errorf("error getting parameter input for %s: %w", param.Name, err)
+        }
+
+        params[param.Name] = value
+    }
+
+    result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, params)
+    if err != nil {
+        return fmt.Errorf("error executing command: %w", err)
+    }
+
+    logger.Info("Command result", "result", result)
+    fmt.Printf("Result: %s\n", result)
+
+    return nil
 }
 
 func handleGitspaceCatalogInstall(logger *logger.RateLimitedLogger) (string, error) {
