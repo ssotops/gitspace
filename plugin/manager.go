@@ -150,7 +150,6 @@ func (m *Manager) GetLoadedPlugins() map[string]*Plugin {
 	return loadedPlugins
 }
 
-// In gitspace/plugin/manager.go
 func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]string) (string, error) {
 	m.mu.RLock()
 	plugin, ok := m.plugins[pluginName]
@@ -172,14 +171,22 @@ func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]s
 		return "", fmt.Errorf("failed to unmarshal menu data: %w", err)
 	}
 
-	var selectedOption *gsplug.MenuOption
-	for _, option := range menuOptions {
-		if option.Command == command {
-			selectedOption = &option
-			break
+	var findCommandInMenu func([]gsplug.MenuOption, string) *gsplug.MenuOption
+	findCommandInMenu = func(options []gsplug.MenuOption, cmd string) *gsplug.MenuOption {
+		for _, opt := range options {
+			if opt.Command == cmd {
+				return &opt
+			}
+			if len(opt.SubMenu) > 0 {
+				if subOpt := findCommandInMenu(opt.SubMenu, cmd); subOpt != nil {
+					return subOpt
+				}
+			}
 		}
+		return nil
 	}
 
+	selectedOption := findCommandInMenu(menuOptions, command)
 	if selectedOption == nil {
 		return "", fmt.Errorf("command not found in menu: %s", command)
 	}
@@ -201,10 +208,14 @@ func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]s
 
 	resp, err := plugin.sendRequest(2, req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error sending request to plugin: %w", err)
 	}
 
-	cmdResp := resp.(*pb.CommandResponse)
+	cmdResp, ok := resp.(*pb.CommandResponse)
+	if !ok {
+		return "", fmt.Errorf("unexpected response type: %T", resp)
+	}
+
 	if !cmdResp.Success {
 		return "", fmt.Errorf("command failed: %s", cmdResp.ErrorMessage)
 	}
