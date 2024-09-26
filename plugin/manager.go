@@ -454,3 +454,17 @@ func (bwc *bufferedWriteCloser) Close() error {
 	}
 	return bwc.closer.Close()
 }
+
+func (m *Manager) GetFilteredPlugins() map[string]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	filtered := make(map[string]string)
+	for name, path := range m.discoveredPlugins {
+		if name != "data" {
+			filtered[name] = path
+		}
+	}
+
+	return filtered
+}
