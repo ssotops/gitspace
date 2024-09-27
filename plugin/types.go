@@ -33,7 +33,7 @@ type Plugin struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
-	logger *logger.RateLimitedLogger
+	Logger *logger.RateLimitedLogger
 }
 
 type CatalogPlugin struct {

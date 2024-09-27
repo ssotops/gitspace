@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/charmbracelet/log"
@@ -13,46 +12,58 @@ import (
 )
 
 func main() {
-	logDir := filepath.Join("logs", "gitspace")
-	logger, err := logger.NewRateLimitedLogger(logDir, "gitspace")
+	mainLogger, err := logger.NewRateLimitedLogger("gitspace")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
 		os.Exit(1)
 	}
 
-	logger.Info("Gitspace starting up")
+	mainLogger.Info("Gitspace starting up")
 
 	// Set log level to Debug for detailed logging
-	logger.SetLogLevel(log.DebugLevel)
+	mainLogger.SetLogLevel(log.DebugLevel)
+
+	// Create a slice to store all loggers
+	var allLoggers []*logger.RateLimitedLogger
+	allLoggers = append(allLoggers, mainLogger)
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
 	printWelcomeMessage()
 
-	config, err := getConfigFromUser(logger)
+	config, err := getConfigFromUser(mainLogger)
 	if err != nil {
-		logger.Error("Error getting config", "error", err)
+		mainLogger.Error("Error getting config", "error", err)
 		return
 	}
-	logger.Debug("Config loaded successfully", "config_path", config.Global.Path)
+	mainLogger.Debug("Config loaded successfully", "config_path", config.Global.Path)
 
 	// Initialize the plugin manager
-	pluginManager := plugin.NewManager(logger)
+	pluginManager := plugin.NewManager(mainLogger)
 	err = pluginManager.DiscoverPlugins()
 	if err != nil {
-		logger.Error("Failed to discover plugins", "error", err)
+		mainLogger.Error("Failed to discover plugins", "error", err)
 	}
+
+	// Set up a deferred function to print the log summary
+	defer func() {
+		// Add plugin loggers to allLoggers
+		for _, p := range pluginManager.GetLoadedPlugins() {
+			allLoggers = append(allLoggers, p.Logger)
+		}
+		logger.PrintLogSummary(allLoggers)
+	}()
 
 	for {
 		select {
 		case <-signalChan:
-			logger.Info("Received interrupt signal. Exiting Gitspace...")
+			mainLogger.Info("Received interrupt signal. Exiting Gitspace...")
 			return
 		default:
 			printConfigPath(config)
-			if handleMainMenu(logger, &config, pluginManager) {
-				logger.Info("User chose to quit. Exiting Gitspace...")
+			if handleMainMenu(mainLogger, &config, pluginManager) {
+				mainLogger.Info("User chose to quit. Exiting Gitspace...")
 				return
 			}
 		}
@@ -65,14 +76,4 @@ func printConfigPath(config *Config) {
 	} else {
 		fmt.Println("No config file loaded.")
 	}
-}
-
-func initLogger() *log.Logger {
-	logger := log.NewWithOptions(os.Stderr, log.Options{
-		ReportCaller:    true,
-		ReportTimestamp: true,
-		Level:           log.DebugLevel,
-	})
-	logger.Debug("Logger initialized with Debug level")
-	return logger
 }

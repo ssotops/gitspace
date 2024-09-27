@@ -85,13 +85,18 @@ func (m *Manager) LoadPlugin(name string) error {
 		}
 	}()
 
+	pluginLogger, err := logger.NewRateLimitedLogger(name)
+	if err != nil {
+		return fmt.Errorf("failed to create plugin logger: %w", err)
+	}
+
 	plugin := &Plugin{
 		Name:   name,
 		Path:   path,
 		cmd:    cmd,
 		stdin:  bufferedStdin,
 		stdout: stdout,
-		logger: m.logger,
+		Logger: pluginLogger,
 	}
 
 	m.logger.Debug("Sending GetPluginInfo request", "name", name)
@@ -264,39 +269,39 @@ func (m *Manager) GetPluginMenu(pluginName string) (*pb.MenuResponse, error) {
 }
 
 func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, error) {
-	p.logger.Debug("Preparing to send request", "type", msgType, "name", p.Name)
+	p.Logger.Debug("Preparing to send request", "type", msgType, "name", p.Name)
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
-	p.logger.Debug("Marshaled request", "data", fmt.Sprintf("%x", data))
+	p.Logger.Debug("Marshaled request", "data", fmt.Sprintf("%x", data))
 
-	p.logger.Debug("Writing message type", "type", msgType)
+	p.Logger.Debug("Writing message type", "type", msgType)
 	if _, err := p.stdin.Write([]byte{byte(msgType)}); err != nil {
 		return nil, fmt.Errorf("failed to write message type: %w", err)
 	}
 
-	p.logger.Debug("Writing message length", "length", len(data))
+	p.Logger.Debug("Writing message length", "length", len(data))
 	if err := binary.Write(p.stdin, binary.LittleEndian, uint32(len(data))); err != nil {
 		return nil, fmt.Errorf("failed to write message length: %w", err)
 	}
 
-	p.logger.Debug("Writing message data", "data", fmt.Sprintf("%x", data))
+	p.Logger.Debug("Writing message data", "data", fmt.Sprintf("%x", data))
 	if _, err := p.stdin.Write(data); err != nil {
 		return nil, fmt.Errorf("failed to write message data: %w", err)
 	}
 
 	if err := p.stdin.(*bufferedWriteCloser).Flush(); err != nil {
-		p.logger.Warn("Failed to flush stdin", "error", err)
+		p.Logger.Warn("Failed to flush stdin", "error", err)
 	}
 
-	p.logger.Debug("Waiting for response", "name", p.Name)
+	p.Logger.Debug("Waiting for response", "name", p.Name)
 	respType, respData, err := readMessage(p.stdout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-	p.logger.Debug("Received response", "type", respType, "dataLength", len(respData), "rawData", fmt.Sprintf("%x", respData))
+	p.Logger.Debug("Received response", "type", respType, "dataLength", len(respData), "rawData", fmt.Sprintf("%x", respData))
 
 	var resp proto.Message
 	switch respType {
@@ -315,7 +320,7 @@ func (p *Plugin) sendRequest(msgType uint32, msg proto.Message) (proto.Message, 
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	p.logger.Debug("Unmarshalled response", "content", fmt.Sprintf("%+v", resp))
+	p.Logger.Debug("Unmarshalled response", "content", fmt.Sprintf("%+v", resp))
 	return resp, nil
 }
 
