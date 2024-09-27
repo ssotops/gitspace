@@ -236,6 +236,12 @@ func runPluginLoop(ctx context.Context, logger *logger.RateLimitedLogger, manage
 	menuStack := [][]gsplug.MenuOption{}
 
 	for {
+		// Check if the plugin is still running
+		if !manager.IsPluginRunning(selectedPlugin) {
+			pluginLogger.Error("Plugin has terminated unexpectedly", "plugin", selectedPlugin)
+			return fmt.Errorf("plugin %s has terminated unexpectedly", selectedPlugin)
+		}
+
 		// Create a channel for menu selection
 		menuDone := make(chan struct{})
 		var selectedCommand string
