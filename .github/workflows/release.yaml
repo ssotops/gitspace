@@ -42,5 +42,8 @@ jobs:
           go mod init dagger-release
           go mod edit -replace github.com/ssotops/gitspace=../..
           go get dagger.io/dagger@latest
+          go get github.com/Masterminds/semver/v3@latest
+          go get github.com/google/go-github/v39@latest
+          go get golang.org/x/oauth2@latest
           go mod tidy
           go run dagger-release.go
