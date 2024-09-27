@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/charmbracelet/log"
@@ -255,6 +256,12 @@ func (m *Manager) GetPluginMenu(pluginName string) (*pb.MenuResponse, error) {
 
 	resp, err := plugin.sendRequest(3, req)
 	if err != nil {
+		if strings.Contains(err.Error(), "broken pipe") {
+			m.mu.Lock()
+			delete(m.plugins, pluginName)
+			m.mu.Unlock()
+			return nil, fmt.Errorf("plugin %s has terminated unexpectedly", pluginName)
+		}
 		log.Printf("Error getting menu from plugin %s: %v", pluginName, err)
 		return nil, err
 	}
@@ -483,4 +490,14 @@ func (m *Manager) GetFilteredPlugins() map[string]string {
 	}
 
 	return filtered
+}
+
+func (m *Manager) IsPluginRunning(pluginName string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	plugin, exists := m.plugins[pluginName]
+	if !exists {
+		return false
+	}
+	return plugin.cmd.ProcessState == nil || !plugin.cmd.ProcessState.Exited()
 }
