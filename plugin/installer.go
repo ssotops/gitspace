@@ -134,6 +134,32 @@ func InstallPlugin(logger *logger.RateLimitedLogger, manager *Manager, source st
 	}
 	logger.Debug("Successfully copied plugin files")
 
+	// Copy additional files for scmtea plugin
+	if pluginName == "scmtea" {
+		dataDir := filepath.Join(pluginsDir, "data", pluginName)
+		err = os.MkdirAll(dataDir, 0755)
+		if err != nil {
+			logger.Error("Failed to create data directory for scmtea", "error", err)
+			return fmt.Errorf("failed to create data directory for scmtea: %w", err)
+		}
+
+		setupScriptSrc := filepath.Join(sourceDir, "setup_gitea.js")
+		setupScriptDest := filepath.Join(dataDir, "setup_gitea.js")
+		err = copyFile(setupScriptSrc, setupScriptDest)
+		if err != nil {
+			logger.Error("Failed to copy setup_gitea.js", "error", err)
+			return fmt.Errorf("failed to copy setup_gitea.js: %w", err)
+		}
+
+		composeFileSrc := filepath.Join(sourceDir, "default-docker-compose.yaml")
+		composeFileDest := filepath.Join(dataDir, "default-docker-compose.yaml")
+		err = copyFile(composeFileSrc, composeFileDest)
+		if err != nil {
+			logger.Error("Failed to copy default-docker-compose.yaml", "error", err)
+			return fmt.Errorf("failed to copy default-docker-compose.yaml: %w", err)
+		}
+	}
+
 	err = EnsurePluginDirectoryPermissions(logger)
 	if err != nil {
 		logger.Error("Failed to ensure plugin directory permissions after copying files", "error", err)
