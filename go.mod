@@ -13,7 +13,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pelletier/go-toml/v2 v2.2.3
-	github.com/ssotops/gitspace-plugin-sdk v0.0.0-20240927022449-1142f36973c9
+	github.com/ssotops/gitspace-plugin-sdk v0.0.0-20240927184424-5bb8a82d9520
 	golang.org/x/oauth2 v0.23.0
 	google.golang.org/protobuf v1.34.2
 )
@@ -60,7 +60,7 @@ require (
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240924160255-9d4c2d233b61 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240930140551-af27646dc61f // indirect
 	google.golang.org/grpc v1.67.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
