@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -324,7 +325,8 @@ func installFromGitspaceCatalog(logger *logger.RateLimitedLogger, manager *Manag
 
 	// Download the plugin files
 	logger.Debug("Downloading plugin files")
-	err = lib.DownloadGitHubDirectory(owner, repo, path, tempDir)
+	ctx := context.Background()
+	err = lib.DownloadDirectory(ctx, lib.SCMTypeGitHub, "", owner, repo, path, tempDir)
 	if err != nil {
 		logger.Error("Failed to download plugin files", "error", err)
 		return fmt.Errorf("failed to download plugin files: %w", err)

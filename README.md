@@ -106,7 +106,6 @@ labels = ["utility"]
   - `match`: The matching method ("startsWith", "endsWith", "includes", or "isExactly").
   - `values`: Array of strings to match against repository names.
   - `type`: Type of the repository for this group.
-  - `labels`: Labels specific to repositories in this group.
 
 ## Features
 
