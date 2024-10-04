@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,8 +13,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"github.com/ssotops/gitspace/lib"
-  "github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 type RepoResult struct {
@@ -57,20 +58,33 @@ func cloneRepositories(logger *logger.RateLimitedLogger, config *Config) {
 		return
 	}
 
-	// Check for GitHub token
-	if os.Getenv("GITHUB_TOKEN") == "" {
-		logger.Error("GITHUB_TOKEN environment variable not set. Please set it and try again.")
+	// Check for appropriate authentication based on SCM type
+	switch lib.SCMType(config.Global.SCM) {
+	case lib.SCMTypeGitHub:
+		if os.Getenv("GITHUB_TOKEN") == "" {
+			logger.Error("GITHUB_TOKEN environment variable not set. Please set it and try again.")
+			return
+		}
+	case lib.SCMTypeGitea:
+		// For Gitea, we're using SSH authentication, so we don't need to check for a token
+		// However, we might want to verify the SSH key exists
+		if _, err := os.Stat(sshKeyPath); os.IsNotExist(err) {
+			logger.Error("SSH key not found. Please ensure the key exists at the specified path.", "path", sshKeyPath)
+			return
+		}
+	default:
+		logger.Error("Unsupported SCM type", "type", config.Global.SCM)
 		return
 	}
 
 	// Get list of repositories to clone
-	repos, err := lib.GetRepositories(config.Global.SCM, config.Global.Owner)
+	ctx := context.Background()
+	repos, err := lib.GetRepositories(ctx, lib.SCMType(config.Global.SCM), config.Global.BaseURL, config.Global.Owner)
 	if err != nil {
 		logger.Error("Error fetching repositories", "error", err)
 		return
 	}
 
-	// Filter repositories based on criteria
 	filteredRepos := filterRepositories(repos, config)
 
 	if len(filteredRepos) == 0 {
@@ -364,7 +378,8 @@ func syncRepositories(logger *logger.RateLimitedLogger, config *Config) {
 	}
 
 	// Get list of repositories to sync
-	repos, err := lib.GetRepositories(config.Global.SCM, config.Global.Owner)
+	ctx := context.Background()
+	repos, err := lib.GetRepositories(ctx, lib.SCMType(config.Global.SCM), "", config.Global.Owner)
 	if err != nil {
 		logger.Error("Error fetching repositories", "error", err)
 		return

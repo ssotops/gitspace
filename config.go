@@ -17,6 +17,7 @@ type Config struct {
 		Path                   string `toml:"path"`
 		SCM                    string `toml:"scm"`
 		Owner                  string `toml:"owner"`
+		BaseURL                string `toml:"base_url"`
 		EmptyRepoInitialBranch string `toml:"empty_repo_initial_branch"`
 	} `toml:"global"`
 	Auth struct {

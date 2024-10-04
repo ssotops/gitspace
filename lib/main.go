@@ -8,7 +8,7 @@ import (
 type SCMType string
 
 const (
-	SCMTypeGitHub SCMType = "github.com"
+	SCMTypeGitHub SCMType = "github"
 	SCMTypeGitea  SCMType = "gitea"
 )
 
