@@ -55,12 +55,27 @@ func (g *GiteaProvider) FetchRepositories(ctx context.Context, owner string) ([]
 	perPage := 50
 
 	for {
-		repos, _, err := g.client.ListOrgRepos(owner, gitea.ListOrgReposOptions{
+		var repos []*gitea.Repository
+		var err error
+
+		// First, try to fetch as user repositories
+		repos, _, err = g.client.ListUserRepos(owner, gitea.ListReposOptions{
 			ListOptions: gitea.ListOptions{
 				Page:     page,
 				PageSize: perPage,
 			},
 		})
+
+		// If user method fails, try as organization
+		if err != nil {
+			repos, _, err = g.client.ListOrgRepos(owner, gitea.ListOrgReposOptions{
+				ListOptions: gitea.ListOptions{
+					Page:     page,
+					PageSize: perPage,
+				},
+			})
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("error fetching repositories: %v", err)
 		}

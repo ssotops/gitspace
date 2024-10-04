@@ -1,1 +1,1 @@
-install.sh --local
+./install.sh --local

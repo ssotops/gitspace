@@ -15,6 +15,7 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/ssotops/gitspace-plugin-sdk v0.0.0-20241001023129-8c91f9f5d979
+	golang.org/x/crypto v0.27.0
 	golang.org/x/oauth2 v0.23.0
 	google.golang.org/protobuf v1.34.2
 )
@@ -58,7 +59,6 @@ require (
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/skeema/knownhosts v1.3.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect

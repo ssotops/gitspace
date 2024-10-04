@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"github.com/ssotops/gitspace/lib"
+	gossh "golang.org/x/crypto/ssh" // Add this import
 )
 
 type RepoResult struct {
@@ -160,30 +162,54 @@ func cloneRepositories(logger *logger.RateLimitedLogger, config *Config) {
 	printSummaryTable(config, results, repoDir)
 }
 
+// func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKeyPath, initialBranch string, logger *logger.RateLimitedLogger) error {
+// 	repoURL := fmt.Sprintf("https://%s/%s/%s.git", scm, owner, repo)
+
+// 	cloneOptions := &git.CloneOptions{
+// 		URL:      repoURL,
+// 		Progress: os.Stdout,
+// 	}
+
+// 	if sshAuth != nil {
+// 		repoURL = fmt.Sprintf("git@%s:%s/%s.git", scm, owner, repo)
+// 		cloneOptions.URL = repoURL
+// 		cloneOptions.Auth = sshAuth
+// 	}
+
+// 	// First, try to clone normally
+// 	_, err := git.PlainClone(repoPath, false, cloneOptions)
+
+// 	if err != nil {
+// 		if strings.Contains(err.Error(), "remote repository is empty") {
+// 			// If the repository is empty, use Git commands to clone it
+// 			logger.Info("Cloning empty repository", "repo", repo)
+// 			return cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch, logger)
+// 		}
+// 		return err
+// 	}
+
+// 	return nil
+// }
+
 func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKeyPath, initialBranch string, logger *logger.RateLimitedLogger) error {
-	repoURL := fmt.Sprintf("https://%s/%s/%s.git", scm, owner, repo)
+	repoURL := fmt.Sprintf("ssh://scmtea/%s/%s.git", owner, repo)
+	logger.Debug("Cloning repo", "url", repoURL, "path", repoPath)
+
+	// Create a custom HostKeyCallback function that always returns nil
+	sshAuth.HostKeyCallback = func(hostname string, remote net.Addr, key gossh.PublicKey) error {
+		return nil
+	}
 
 	cloneOptions := &git.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stdout,
+		Auth:     sshAuth,
 	}
 
-	if sshAuth != nil {
-		repoURL = fmt.Sprintf("git@%s:%s/%s.git", scm, owner, repo)
-		cloneOptions.URL = repoURL
-		cloneOptions.Auth = sshAuth
-	}
-
-	// First, try to clone normally
 	_, err := git.PlainClone(repoPath, false, cloneOptions)
-
 	if err != nil {
-		if strings.Contains(err.Error(), "remote repository is empty") {
-			// If the repository is empty, use Git commands to clone it
-			logger.Info("Cloning empty repository", "repo", repo)
-			return cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch, logger)
-		}
-		return err
+		logger.Error("Clone failed", "error", err, "url", repoURL)
+		return fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	return nil
