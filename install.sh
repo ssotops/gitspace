@@ -2,6 +2,44 @@
 
 set -e
 
+# Function to perform local installation
+perform_local_install() {
+    echo "Performing local installation..."
+
+    # Run build.sh in the current working directory
+    echo "Building gitspace..."
+    ./build.sh
+
+    # Remove existing gitspace binary
+    echo "Removing existing gitspace binary..."
+    sudo rm -f /usr/local/bin/gitspace
+
+    # Get the full path of the newly built gitspace binary
+    BINARY_PATH=$(pwd)/gitspace
+
+    # Symlink the new binary to /usr/local/bin
+    echo "Creating symlink to new gitspace binary..."
+    sudo ln -s "$BINARY_PATH" /usr/local/bin/gitspace
+
+    # Check if gitspace is available in PATH
+    echo "Checking gitspace installation..."
+    if which gitspace > /dev/null; then
+        echo "gitspace has been successfully installed locally!"
+        echo "$(which gitspace)"
+    else
+        echo "Error: gitspace installation failed. It's not available in your PATH."
+        exit 1
+    fi
+
+    exit 0
+}
+
+# Check for local installation flag
+if [ "$1" = "--local" ] || [ "$1" = "-l" ]; then
+    perform_local_install
+fi
+
+# Rest of the original script for remote installation
 # Determine OS and architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)

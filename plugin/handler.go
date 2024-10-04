@@ -131,7 +131,9 @@ func HandleGitspaceCatalogInstall(logger *logger.RateLimitedLogger) (string, err
 	owner := "ssotops"
 	repo := "gitspace-catalog"
 	logger.Debug("Fetching Gitspace Catalog", "owner", owner, "repo", repo)
-	catalog, err := lib.FetchGitspaceCatalog(owner, repo)
+
+	ctx := context.Background()
+	catalog, err := lib.FetchGitspaceCatalog(ctx, lib.SCMTypeGitHub, "", owner, repo)
 	if err != nil {
 		logger.Error("Failed to fetch Gitspace Catalog", "error", err)
 		return "", fmt.Errorf("failed to fetch Gitspace Catalog: %w", err)

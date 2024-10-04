@@ -1,7 +1,6 @@
 [global]
 path = "gs"
-labels = ["feature", "bug"]
-scm = "github.com"
+scm = "github"
 owner = "ssotops"
 
 [auth]
@@ -15,17 +14,11 @@ values = ["bots"]
 [groups.git]
 match = "startsWith"
 values = ["git"]
-# type = "gitops"
-# labels = ["backend", "core"]
 
 [groups.space]
 match = "endsWith"
 values = ["space", "plugin"]
-# type = "solution"
-# labels = ["frontend", "experimental"]
 
 [groups.sso]
 match = "includes"
 values = ["sso"]
-# type = "ssot"
-# labels = ["auth", "security"]
