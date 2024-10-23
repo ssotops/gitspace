@@ -114,11 +114,19 @@ func HandleListInstalledPlugins(logger *logger.RateLimitedLogger) error {
 		return fmt.Errorf("failed to list installed plugins: %w", err)
 	}
 
-	if len(plugins) == 0 {
+	// Filter out internal directories
+	var userPlugins []string
+	for _, plugin := range plugins {
+		if plugin != "data" {
+			userPlugins = append(userPlugins, plugin)
+		}
+	}
+
+	if len(userPlugins) == 0 {
 		logger.Info("No plugins installed")
 	} else {
 		logger.Info("Installed plugins:")
-		for _, plugin := range plugins {
+		for _, plugin := range userPlugins {
 			logger.Info("- " + plugin)
 		}
 	}
@@ -466,4 +474,23 @@ func executePluginCommand(logger *logger.RateLimitedLogger, manager *Manager, se
 	logger.Info("Command result", "result", result)
 	fmt.Printf("Result: %s\n", result)
 	return nil
+}
+
+func getFilteredPluginList(plugins []string) []string {
+	var filtered []string
+	for _, plugin := range plugins {
+		if plugin != "data" {
+			filtered = append(filtered, plugin)
+		}
+	}
+	return filtered
+}
+
+func createOptionsFromPlugins(plugins []string) []huh.Option[string] {
+	filtered := getFilteredPluginList(plugins)
+	options := make([]huh.Option[string], len(filtered))
+	for i, plugin := range filtered {
+		options[i] = huh.NewOption(plugin, plugin)
+	}
+	return options
 }
