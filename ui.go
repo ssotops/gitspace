@@ -261,6 +261,7 @@ func handleGitspaceCommand(logger *logger.RateLimitedLogger, config **Config) {
 				huh.NewOption("Print Config Paths", "config_paths"),
 				huh.NewOption("Print Version Info", "version_info"),
 				huh.NewOption("Load Config", "load_config"),
+				huh.NewOption("Delete Current Config", "delete_config"),
 				huh.NewOption("Go back", "back"),
 			).
 			Value(&choice).
@@ -289,6 +290,13 @@ func handleGitspaceCommand(logger *logger.RateLimitedLogger, config **Config) {
 				} else {
 					logger.Info("No config file loaded")
 				}
+			}
+		case "delete_config":
+			if err := deleteCurrentConfig(logger); err != nil {
+				logger.Error("Failed to delete current config", "error", err)
+			} else {
+				logger.Info("Current config deleted successfully")
+				*config = nil
 			}
 		case "back":
 			return

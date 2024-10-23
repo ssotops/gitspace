@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Ensure script fails on any error
 set -e
 
 SKIP_VENDOR=false
@@ -20,12 +21,14 @@ command_exists() {
 
 # Function to prompt for installation
 prompt_install() {
-    read -p "Would you like to install $1? (y/n) " choice
-    case "$choice" in 
-      y|Y ) return 0;;
-      n|N ) return 1;;
-      * ) echo "Invalid input. Please enter y or n."; prompt_install "$1";;
-    esac
+    while true; do
+        read -p "Would you like to install $1? (y/n) " choice
+        case "$choice" in 
+            y|Y ) return 0;;
+            n|N ) return 1;;
+            * ) echo "Invalid input. Please enter y or n.";;
+        esac
+    done
 }
 
 # Function to install gum
@@ -78,21 +81,115 @@ error() {
     gum style --foreground 196 "$(gum style --bold "✗")" "$1" >&2
 }
 
+# Function to handle local SDK
+handle_sdk_dependency() {
+    log "Checking SDK dependency..."
+    
+    # Check if local SDK exists
+    if [ ! -d "gs/gitspace-plugin-sdk" ]; then
+        log "Local SDK not found, using published version..."
+        
+        # Check if there's a replace directive
+        if grep -q "replace github.com/ssotops/gitspace-plugin-sdk" go.mod; then
+            log "Removing local SDK replace directive..."
+            go mod edit -dropreplace github.com/ssotops/gitspace-plugin-sdk
+        fi
+        
+        # Get the latest published version
+        log "Fetching latest published SDK version..."
+        if go get github.com/ssotops/gitspace-plugin-sdk@latest; then
+            success "Updated to latest published SDK version"
+            changes+=("Updated to published SDK")
+        else
+            error "Failed to get latest SDK version"
+            exit 1
+        fi
+    else
+        log "Using local SDK from gs/gitspace-plugin-sdk"
+        # Verify local SDK is properly set up
+        if [ ! -f "gs/gitspace-plugin-sdk/go.mod" ]; then
+            error "Local SDK directory exists but appears to be incomplete"
+            exit 1
+        fi
+        changes+=("Using local SDK")
+    fi
+}
+
 # Function to handle vendoring
 handle_vendoring() {
     if [ "$SKIP_VENDOR" = true ]; then
         log "Skipping vendor directory sync (--skip-vendor flag used)"
         return
     fi
+    
     log "Syncing vendor directory..."
-    go mod vendor
-    if [ $? -ne 0 ]; then
+    if go mod vendor; then
+        success "Vendor directory synced successfully"
+        changes+=("Vendor directory synced")
+    else
         error "Failed to sync vendor directory"
         exit 1
     fi
-    success "Vendor directory synced successfully"
-    changes+=("Vendor directory synced")
 }
+
+# Function to handle dependency updates
+handle_dependencies() {
+    log "Updating dependencies..."
+    if go get -u ./...; then
+        success "Dependencies updated successfully"
+        changes+=("Dependencies updated")
+    else
+        error "Failed to update dependencies"
+        exit 1
+    fi
+
+    log "Tidying up go.mod..."
+    if go mod tidy; then
+        success "go.mod tidied successfully"
+        changes+=("go.mod tidied")
+    else
+        error "Failed to tidy go.mod"
+        exit 1
+    fi
+}
+
+# Function to build project
+build_project() {
+    log "Building the project..."
+    if go build -o gitspace .; then
+        success "Project built successfully"
+        changes+=("Project built")
+    else
+        error "Failed to build the project"
+        exit 1
+    fi
+}
+
+# Function to run tests
+run_tests() {
+    log "Running tests..."
+    if go test ./...; then
+        success "All tests passed"
+        changes+=("Tests passed")
+    else
+        error "Some tests failed"
+        exit 1
+    fi
+}
+
+# Function to print build summary
+print_summary() {
+    gum style \
+        --foreground 226 --border-foreground 226 --border normal \
+        --align left --width 50 --margin "1 2" --padding "1 2" \
+        "Summary of Changes:"
+
+    for change in "${changes[@]}"; do
+        gum style --foreground 226 "• $change"
+    done
+}
+
+# Main execution
 
 # Print header
 print_header
@@ -100,61 +197,14 @@ print_header
 # Initialize variables to track changes
 changes=()
 
-# Update dependencies
-log "Updating dependencies..."
-go get -u ./...
-if [ $? -eq 0 ]; then
-    success "Dependencies updated successfully."
-    changes+=("Dependencies updated")
-else
-    error "Failed to update dependencies."
-    exit 1
-fi
-
-# Tidy up the go.mod file
-log "Tidying up go.mod..."
-go mod tidy
-if [ $? -eq 0 ]; then
-    success "go.mod tidied successfully."
-    changes+=("go.mod tidied")
-else
-    error "Failed to tidy go.mod."
-    exit 1
-fi
-
-# Handle vendoring
+# Execute build steps
+handle_sdk_dependency
+handle_dependencies
 handle_vendoring
-
-# Build the project
-log "Building the project..."
-go build -o gitspace .
-if [ $? -eq 0 ]; then
-    success "Project built successfully."
-    changes+=("Project built")
-else
-    error "Failed to build the project."
-    exit 1
-fi
-
-# Run tests
-log "Running tests..."
-go test ./...
-if [ $? -eq 0 ]; then
-    success "All tests passed."
-    changes+=("Tests passed")
-else
-    error "Some tests failed."
-    exit 1
-fi
+build_project
+run_tests
 
 # Print summary
-gum style \
-    --foreground 226 --border-foreground 226 --border normal \
-    --align left --width 50 --margin "1 2" --padding "1 2" \
-    "Summary of Changes:"
-
-for change in "${changes[@]}"; do
-    gum style --foreground 226 "• $change"
-done
+print_summary
 
 success "Build process completed successfully!"
