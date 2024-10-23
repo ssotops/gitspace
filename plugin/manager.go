@@ -479,18 +479,18 @@ func (bwc *bufferedWriteCloser) Close() error {
 }
 
 func (m *Manager) GetFilteredPlugins() map[string]string {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-    filtered := make(map[string]string)
-    for name, path := range m.discoveredPlugins {
-        // Filter out internal directories and non-plugin entries
-        if name != "data" {
-            filtered[name] = path
-        }
-    }
+	filtered := make(map[string]string)
+	for name, path := range m.discoveredPlugins {
+		// Filter out internal directories and non-plugin entries
+		if name != "data" {
+			filtered[name] = path
+		}
+	}
 
-    return filtered
+	return filtered
 }
 
 func (m *Manager) IsPluginRunning(pluginName string) bool {
