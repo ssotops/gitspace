@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -162,52 +163,44 @@ func cloneRepositories(logger *logger.RateLimitedLogger, config *Config) {
 	printSummaryTable(config, results, repoDir)
 }
 
-// func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKeyPath, initialBranch string, logger *logger.RateLimitedLogger) error {
-// 	repoURL := fmt.Sprintf("https://%s/%s/%s.git", scm, owner, repo)
-
-// 	cloneOptions := &git.CloneOptions{
-// 		URL:      repoURL,
-// 		Progress: os.Stdout,
-// 	}
-
-// 	if sshAuth != nil {
-// 		repoURL = fmt.Sprintf("git@%s:%s/%s.git", scm, owner, repo)
-// 		cloneOptions.URL = repoURL
-// 		cloneOptions.Auth = sshAuth
-// 	}
-
-// 	// First, try to clone normally
-// 	_, err := git.PlainClone(repoPath, false, cloneOptions)
-
-// 	if err != nil {
-// 		if strings.Contains(err.Error(), "remote repository is empty") {
-// 			// If the repository is empty, use Git commands to clone it
-// 			logger.Info("Cloning empty repository", "repo", repo)
-// 			return cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch, logger)
-// 		}
-// 		return err
-// 	}
-
-// 	return nil
-// }
-
 func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKeyPath, initialBranch string, logger *logger.RateLimitedLogger) error {
-	repoURL := fmt.Sprintf("ssh://scmtea/%s/%s.git", owner, repo)
-	logger.Debug("Cloning repo", "url", repoURL, "path", repoPath)
+	var repoURL string
 
-	// Create a custom HostKeyCallback function that always returns nil
-	sshAuth.HostKeyCallback = func(hostname string, remote net.Addr, key gossh.PublicKey) error {
-		return nil
+	// Format the repository URL based on SCM type
+	switch lib.SCMType(scm) {
+	case lib.SCMTypeGitHub:
+		repoURL = fmt.Sprintf("git@github.com:%s/%s.git", owner, repo)
+	case lib.SCMTypeGitea:
+		repoURL = fmt.Sprintf("ssh://scmtea/%s/%s.git", owner, repo)
+	default:
+		return fmt.Errorf("unsupported SCM type: %s", scm)
 	}
 
+	logger.Debug("Cloning repo", "url", repoURL, "path", repoPath)
+
+	// Configure clone options
 	cloneOptions := &git.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stdout,
 		Auth:     sshAuth,
 	}
 
+	// For GitHub, we don't want to skip host key verification
+	if lib.SCMType(scm) == lib.SCMTypeGitHub {
+		sshAuth.HostKeyCallback = nil // Use default host key verification
+	} else {
+		// For Gitea local development, we skip host key verification
+		sshAuth.HostKeyCallback = func(hostname string, remote net.Addr, key gossh.PublicKey) error {
+			return nil
+		}
+	}
+
 	_, err := git.PlainClone(repoPath, false, cloneOptions)
 	if err != nil {
+		if strings.Contains(err.Error(), "remote repository is empty") {
+			logger.Info("Repository is empty, initializing", "repo", repo)
+			return cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch, logger)
+		}
 		logger.Error("Clone failed", "error", err, "url", repoURL)
 		return fmt.Errorf("failed to clone repository: %w", err)
 	}
@@ -215,46 +208,50 @@ func cloneRepo(repoPath, scm, owner, repo string, sshAuth *ssh.PublicKeys, sshKe
 	return nil
 }
 
+func repoExists(scm, owner, repo string) bool {
+	switch lib.SCMType(scm) {
+	case lib.SCMTypeGitHub:
+		url := fmt.Sprintf("https://github.com/%s/%s", owner, repo)
+		resp, err := http.Get(url)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	case lib.SCMTypeGitea:
+		// For Gitea, we might want to use the API
+		// This is a simplified check for local development
+		return true
+	default:
+		return false
+	}
+}
+
 func cloneEmptyRepo(repoPath, repoURL, sshKeyPath, initialBranch string, logger *logger.RateLimitedLogger) error {
-	// Create the repository directory
 	if err := os.MkdirAll(repoPath, 0755); err != nil {
 		return fmt.Errorf("failed to create repository directory: %w", err)
 	}
 
-	// Initialize the repository
-	cmd := exec.Command("git", "init")
-	cmd.Dir = repoPath
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to initialize repository: %w, output: %s", err, output)
+	cmds := []struct {
+		name string
+		args []string
+	}{
+		{"git", []string{"init"}},
+		{"git", []string{"remote", "add", "origin", repoURL}},
+		{"git", []string{"checkout", "-b", initialBranch}},
+		{"git", []string{"commit", "--allow-empty", "-m", "Initial empty commit"}},
+		{"git", []string{"push", "-u", "origin", initialBranch}},
 	}
 
-	// Add the remote
-	cmd = exec.Command("git", "remote", "add", "origin", repoURL)
-	cmd.Dir = repoPath
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to add remote: %w, output: %s", err, output)
-	}
-
-	// Create and checkout the initial branch
-	cmd = exec.Command("git", "checkout", "-b", initialBranch)
-	cmd.Dir = repoPath
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create and checkout initial branch: %w, output: %s", err, output)
-	}
-
-	// Create an initial empty commit
-	cmd = exec.Command("git", "commit", "--allow-empty", "-m", "Initial empty commit")
-	cmd.Dir = repoPath
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create initial commit: %w, output: %s", err, output)
-	}
-
-	// Push the initial commit
-	cmd = exec.Command("git", "push", "-u", "origin", initialBranch)
-	cmd.Dir = repoPath
-	cmd.Env = append(os.Environ(), fmt.Sprintf("GIT_SSH_COMMAND=ssh -i %s", sshKeyPath))
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to push initial commit: %w, output: %s", err, output)
+	for _, cmd := range cmds {
+		command := exec.Command(cmd.name, cmd.args...)
+		command.Dir = repoPath
+		if cmd.name == "git" && cmd.args[0] == "push" {
+			command.Env = append(os.Environ(), fmt.Sprintf("GIT_SSH_COMMAND=ssh -i %s", sshKeyPath))
+		}
+		if output, err := command.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to run %s %v: %w\nOutput: %s", cmd.name, cmd.args, err, output)
+		}
 	}
 
 	return nil

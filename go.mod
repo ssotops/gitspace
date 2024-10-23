@@ -72,5 +72,3 @@ require (
 exclude github.com/ssotops/gitspace/examples/plugins v0.0.0
 
 replace github.com/ssotops/gitspace/lib => ./lib
-
-replace github.com/ssotops/gitspace-plugin-sdk => ./gs/gitspace-plugin-sdk
