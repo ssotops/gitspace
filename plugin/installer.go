@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,174 +26,133 @@ type PluginManifest struct {
 	} `toml:"sources"`
 }
 
-func getPluginsDir() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %w", err)
-	}
-	pluginsDir := filepath.Join(homeDir, ".ssot", "gitspace", "plugins")
-
-	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create plugins directory: %w", err)
-	}
-
-	return pluginsDir, nil
-}
-
 func InstallPlugin(logger *logger.RateLimitedLogger, manager *Manager, source string) error {
 	logger.Debug("Starting plugin installation", "source", source)
 
-	// Ensure plugin directory permissions are correct
-	err := EnsurePluginDirectoryPermissions(logger)
-	if err != nil {
-		logger.Error("Failed to ensure plugin directory permissions", "error", err)
+	// Ensure plugin directory permissions
+	if err := EnsurePluginDirectoryPermissions(logger); err != nil {
 		return fmt.Errorf("failed to ensure plugin directory permissions: %w", err)
 	}
 
 	source = strings.TrimSpace(source)
-
 	pluginsDir, err := getPluginsDir()
 	if err != nil {
-		logger.Error("Failed to get plugins directory", "error", err)
 		return fmt.Errorf("failed to get plugins directory: %w", err)
 	}
-	logger.Debug("Plugins directory", "path", pluginsDir)
 
 	isGitspaceCatalog := strings.HasPrefix(source, "https://github.com/ssotops/gitspace-catalog/tree/main/")
 	isRemote := strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://")
-	logger.Debug("Source type", "isRemote", isRemote, "isGitspaceCatalog", isGitspaceCatalog)
 
 	var sourceDir string
 
-	if isGitspaceCatalog {
-		logger.Debug("Installing from Gitspace Catalog", "source", source)
-		return installFromGitspaceCatalog(logger, manager, source)
-	} else if isRemote {
-		logger.Debug("Processing remote source")
+	if isRemote {
 		tempDir, err := os.MkdirTemp("", "gitspace-plugin-*")
 		if err != nil {
-			logger.Error("Failed to create temporary directory", "error", err)
 			return fmt.Errorf("failed to create temporary directory: %w", err)
 		}
 		defer os.RemoveAll(tempDir)
 
-		logger.Debug("Cloning remote repository", "source", source, "tempDir", tempDir)
-		err = gitClone(source, tempDir)
-		if err != nil {
-			logger.Error("Failed to clone remote repository", "error", err)
-			return fmt.Errorf("failed to clone remote repository: %w", err)
+		if isGitspaceCatalog {
+			if err := downloadFromGitspaceCatalog(logger, source, tempDir); err != nil {
+				return err
+			}
+		} else {
+			if err := gitClone(source, tempDir); err != nil {
+				return err
+			}
 		}
-
 		sourceDir = tempDir
 	} else {
-		logger.Debug("Processing local source")
 		absSource, err := filepath.Abs(source)
 		if err != nil {
-			logger.Error("Failed to get absolute path of source", "error", err)
-			return fmt.Errorf("failed to get absolute path of source: %w", err)
+			return fmt.Errorf("failed to get absolute path: %w", err)
 		}
-		logger.Debug("Absolute source path", "path", absSource)
-
-		sourceInfo, err := os.Stat(absSource)
-		if err != nil {
-			if os.IsNotExist(err) {
-				logger.Error("Specified path does not exist", "path", absSource)
-				return fmt.Errorf("the specified path does not exist: %s", absSource)
-			}
-			logger.Error("Failed to get source info", "error", err)
-			return fmt.Errorf("failed to get source info: %w", err)
-		}
-
-		if !sourceInfo.IsDir() {
-			logger.Error("Specified path is not a directory", "path", absSource)
-			return fmt.Errorf("the specified path is not a directory: %s", absSource)
-		}
-
 		sourceDir = absSource
 	}
 
-	manifestPath := filepath.Join(sourceDir, "gitspace-plugin.toml")
-	logger.Debug("Attempting to load plugin manifest", "path", manifestPath)
-	manifest, err := loadPluginManifest(manifestPath)
+	// Load and validate manifest
+	manifest, err := loadPluginManifest(filepath.Join(sourceDir, "gitspace-plugin.toml"))
 	if err != nil {
-		logger.Error("Failed to load plugin manifest", "error", err)
 		return fmt.Errorf("failed to load plugin manifest: %w", err)
 	}
-	logger.Debug("Successfully loaded plugin manifest")
 
 	pluginName := manifest.Metadata.Name
-	logger.Debug("Plugin name from manifest", "name", pluginName)
-
-	// Copy plugin files to plugins directory
 	destDir := filepath.Join(pluginsDir, pluginName)
-	logger.Debug("Copying plugin files", "from", sourceDir, "to", destDir)
-	err = copyDir(sourceDir, destDir)
+
+	// Set up Go module
+	logger.Debug("Setting up Go module", "dir", sourceDir)
+	modInit := exec.Command("go", "mod", "init", fmt.Sprintf("github.com/ssotops/gitspace-catalog/plugins/%s", pluginName))
+	modInit.Dir = sourceDir
+	if output, err := modInit.CombinedOutput(); err != nil {
+		logger.Debug("Module init output", "output", string(output))
+		// Ignore error if module already exists
+	}
+
+	// Remove any existing replacements
+	logger.Debug("Removing existing replacements")
+	modEdit := exec.Command("go", "mod", "edit", "-dropreplace", "github.com/ssotops/gitspace-plugin-sdk")
+	modEdit.Dir = sourceDir
+	if output, err := modEdit.CombinedOutput(); err != nil {
+		logger.Debug("Module edit output", "output", string(output))
+		// Ignore error if no replacements exist
+	}
+
+	// Get latest dependencies
+	logger.Debug("Getting latest dependencies")
+	getCmd := exec.Command("go", "get", "github.com/ssotops/gitspace-plugin-sdk@latest")
+	getCmd.Dir = sourceDir
+	if output, err := getCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to get dependencies: %w\nOutput: %s", err, output)
+	}
+
+	// Tidy up modules
+	logger.Debug("Tidying modules")
+	tidyCmd := exec.Command("go", "mod", "tidy")
+	tidyCmd.Dir = sourceDir
+	if output, err := tidyCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to tidy modules: %w\nOutput: %s", err, output)
+	}
+
+	// Build the plugin
+	logger.Info("Building plugin", "name", pluginName)
+	buildCmd := exec.Command("go", "build", "-o", pluginName)
+	buildCmd.Dir = sourceDir
+	buildCmd.Env = append(os.Environ(), "GO111MODULE=on")
+
+	output, err := buildCmd.CombinedOutput()
 	if err != nil {
-		logger.Error("Failed to copy plugin files", "error", err)
+		return fmt.Errorf("failed to build plugin: %w\nOutput: %s", err, output)
+	}
+
+	// Create plugin directory and install files
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugin directory: %w", err)
+	}
+
+	// Copy and make executable the plugin binary
+	binaryPath := filepath.Join(sourceDir, pluginName)
+	destBinaryPath := filepath.Join(destDir, pluginName)
+	if err := copyFile(binaryPath, destBinaryPath); err != nil {
+		return fmt.Errorf("failed to copy plugin binary: %w", err)
+	}
+	if err := os.Chmod(destBinaryPath, 0755); err != nil {
+		return fmt.Errorf("failed to make plugin executable: %w", err)
+	}
+
+	// Create data directory and copy support files
+	dataDir := filepath.Join(pluginsDir, "data", pluginName)
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %w", err)
+	}
+	if err := copyDir(sourceDir, dataDir); err != nil {
 		return fmt.Errorf("failed to copy plugin files: %w", err)
 	}
-	logger.Debug("Successfully copied plugin files")
 
-	// Copy additional files for scmtea plugin
-	if pluginName == "scmtea" {
-		dataDir := filepath.Join(pluginsDir, "data", pluginName)
-		err = os.MkdirAll(dataDir, 0755)
-		if err != nil {
-			logger.Error("Failed to create data directory for scmtea", "error", err)
-			return fmt.Errorf("failed to create data directory for scmtea: %w", err)
-		}
-
-		setupScriptSrc := filepath.Join(sourceDir, "setup_gitea.js")
-		setupScriptDest := filepath.Join(dataDir, "setup_gitea.js")
-		err = copyFile(setupScriptSrc, setupScriptDest)
-		if err != nil {
-			logger.Error("Failed to copy setup_gitea.js", "error", err)
-			return fmt.Errorf("failed to copy setup_gitea.js: %w", err)
-		}
-
-		composeFileSrc := filepath.Join(sourceDir, "default-docker-compose.yaml")
-		composeFileDest := filepath.Join(dataDir, "default-docker-compose.yaml")
-		err = copyFile(composeFileSrc, composeFileDest)
-		if err != nil {
-			logger.Error("Failed to copy default-docker-compose.yaml", "error", err)
-			return fmt.Errorf("failed to copy default-docker-compose.yaml: %w", err)
-		}
-	}
-
-	err = EnsurePluginDirectoryPermissions(logger)
-	if err != nil {
-		logger.Error("Failed to ensure plugin directory permissions after copying files", "error", err)
-		return fmt.Errorf("failed to ensure plugin directory permissions after copying files: %w", err)
-	}
-
-	// After successfully copying files and setting permissions
-	pluginExecutable := filepath.Join(destDir, pluginName)
-	logger.Debug("Adding plugin to discovered plugins", "name", pluginName, "path", pluginExecutable)
-	manager.AddDiscoveredPlugin(pluginName, pluginExecutable)
+	// Add to discovered plugins
+	manager.AddDiscoveredPlugin(pluginName, destBinaryPath)
 
 	logger.Info("Plugin installed successfully", "name", pluginName)
 	return nil
-}
-
-func downloadFile(url string, filepath string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
-	}
-
-	out, err := os.Create(filepath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, resp.Body)
-	return err
 }
 
 func loadPluginManifest(path string) (*PluginManifest, error) {
@@ -216,50 +174,24 @@ func loadPluginManifest(path string) (*PluginManifest, error) {
 	return &manifest, nil
 }
 
-func UninstallPlugin(logger *logger.RateLimitedLogger, name string) error {
-	pluginsDir, err := getPluginsDir()
-	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
+func downloadFromGitspaceCatalog(logger *logger.RateLimitedLogger, source, tempDir string) error {
+	parts := strings.Split(strings.TrimPrefix(source, "https://github.com/"), "/")
+	if len(parts) < 5 {
+		return fmt.Errorf("invalid Gitspace Catalog URL: %s", source)
 	}
 
-	pluginDir := filepath.Join(pluginsDir, name)
-	if err := os.RemoveAll(pluginDir); err != nil {
-		return fmt.Errorf("failed to remove plugin directory: %w", err)
-	}
+	owner := parts[0]
+	repo := parts[1]
+	path := strings.Join(parts[4:], "/")
 
-	logger.Info("Plugin uninstalled successfully", "name", name)
-	return nil
-}
+	logger.Debug("Downloading from Gitspace Catalog",
+		"owner", owner,
+		"repo", repo,
+		"path", path,
+		"dest", tempDir)
 
-func ListInstalledPlugins(logger *logger.RateLimitedLogger) ([]string, error) {
-	pluginsDir, err := getPluginsDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get plugins directory: %w", err)
-	}
-
-	entries, err := os.ReadDir(pluginsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read plugins directory: %w", err)
-	}
-
-	var plugins []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			plugins = append(plugins, entry.Name())
-		}
-	}
-
-	return plugins, nil
-}
-
-// Helper functions
-func gitClone(url, destPath string) error {
-	cmd := exec.Command("git", "clone", url, destPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git clone failed: %w\nOutput: %s", err, string(output))
-	}
-	return nil
+	ctx := context.Background()
+	return lib.DownloadDirectory(ctx, lib.SCMTypeGitHub, "", owner, repo, path, tempDir)
 }
 
 func copyFile(src, dst string) error {
@@ -299,42 +231,45 @@ func copyDir(src string, dst string) error {
 	})
 }
 
-func installFromGitspaceCatalog(logger *logger.RateLimitedLogger, manager *Manager, source string) error {
-	logger.Debug("Starting installation from Gitspace Catalog", "source", source)
-
-	// Extract owner, repo, and path from the GitHub URL
-	parts := strings.Split(strings.TrimPrefix(source, "https://github.com/"), "/")
-	if len(parts) < 5 { // owner/repo/tree/branch/path
-		return fmt.Errorf("invalid Gitspace Catalog URL: %s", source)
-	}
-
-	owner := parts[0]
-	repo := parts[1]
-	path := strings.Join(parts[4:], "/")
-
-	logger.Debug("Extracted repository details", "owner", owner, "repo", repo, "path", path)
-
-	// Create a temporary directory for the plugin
-	tempDir, err := os.MkdirTemp("", "gitspace-plugin-*")
+func UninstallPlugin(logger *logger.RateLimitedLogger, name string) error {
+	pluginsDir, err := getPluginsDir()
 	if err != nil {
-		return fmt.Errorf("failed to create temporary directory: %w", err)
+		return fmt.Errorf("failed to get plugins directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
 
-	logger.Debug("Created temporary directory", "path", tempDir)
+	// Remove plugin directory
+	pluginDir := filepath.Join(pluginsDir, name)
+	if err := os.RemoveAll(pluginDir); err != nil {
+		return fmt.Errorf("failed to remove plugin directory: %w", err)
+	}
 
-	// Download the plugin files
-	logger.Debug("Downloading plugin files")
-	ctx := context.Background()
-	err = lib.DownloadDirectory(ctx, lib.SCMTypeGitHub, "", owner, repo, path, tempDir)
+	// Remove data directory
+	dataDir := filepath.Join(pluginsDir, "data", name)
+	if err := os.RemoveAll(dataDir); err != nil {
+		logger.Warn("Failed to remove plugin data directory", "error", err)
+	}
+
+	logger.Info("Plugin uninstalled successfully", "name", name)
+	return nil
+}
+
+func ListInstalledPlugins(logger *logger.RateLimitedLogger) ([]string, error) {
+	pluginsDir, err := getPluginsDir()
 	if err != nil {
-		logger.Error("Failed to download plugin files", "error", err)
-		return fmt.Errorf("failed to download plugin files: %w", err)
+		return nil, fmt.Errorf("failed to get plugins directory: %w", err)
 	}
 
-	logger.Debug("Successfully downloaded plugin files")
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read plugins directory: %w", err)
+	}
 
-	// Install the plugin using the existing InstallPlugin function
-	logger.Debug("Installing plugin from temporary directory")
-	return InstallPlugin(logger, manager, tempDir)
+	var plugins []string
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != "data" {
+			plugins = append(plugins, entry.Name())
+		}
+	}
+
+	return plugins, nil
 }
