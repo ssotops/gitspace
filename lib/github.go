@@ -90,9 +90,20 @@ func (g *GitHubProvider) DownloadDirectory(ctx context.Context, owner, repo, pat
 		return fmt.Errorf("error fetching directory contents: %v", err)
 	}
 
+	// Create the destination directory if it doesn't exist
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
 	for _, file := range directoryContent {
 		if *file.Type == "dir" {
-			err = g.DownloadDirectory(ctx, owner, repo, *file.Path, filepath.Join(destDir, *file.Name))
+			// Create the subdirectory first
+			newDestDir := filepath.Join(destDir, *file.Name)
+			if err := os.MkdirAll(newDestDir, 0755); err != nil {
+				return fmt.Errorf("failed to create subdirectory %s: %w", newDestDir, err)
+			}
+			
+			err = g.DownloadDirectory(ctx, owner, repo, *file.Path, newDestDir)
 			if err != nil {
 				return err
 			}
@@ -108,6 +119,12 @@ func (g *GitHubProvider) DownloadDirectory(ctx context.Context, owner, repo, pat
 			}
 
 			filePath := filepath.Join(destDir, *file.Name)
+			
+			// Ensure the parent directory exists before writing the file
+			if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+				return fmt.Errorf("failed to create parent directory for %s: %w", filePath, err)
+			}
+
 			err = os.WriteFile(filePath, []byte(content), 0644)
 			if err != nil {
 				return fmt.Errorf("error writing file: %v", err)
