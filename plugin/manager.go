@@ -156,77 +156,273 @@ func (m *Manager) GetLoadedPlugins() map[string]*Plugin {
 	return loadedPlugins
 }
 
-func (m *Manager) ExecuteCommand(pluginName, command string, params map[string]string) (string, error) {
-	m.mu.RLock()
-	plugin, ok := m.plugins[pluginName]
-	m.mu.RUnlock()
+func (p *ScmteaPlugin) ExecuteCommand(req *pb.CommandRequest) (*pb.CommandResponse, error) {
+	p.logger.Info("Executing command",
+		"command", req.Command,
+		"parameters", req.Parameters)
 
-	if !ok {
-		return "", fmt.Errorf("plugin not found: %s", pluginName)
-	}
+	switch req.Command {
+	case "set_compose_file":
+		return &pb.CommandResponse{
+			Success: true,
+			Result: `Please choose one of the following options:
+1. Use Default Docker Compose File
+2. Enter Custom Docker Compose Path
+3. Go Back`,
+			Navigation: &pb.NavigationContext{
+				CurrentMenu: "set_compose_file",
+				ParentMenu:  "installation_menu",
+				AvailableCommands: []*pb.MenuItem{
+					{
+						Label:   "Use Default Docker Compose File",
+						Command: "set_compose_file_default",
+					},
+					{
+						Label:   "Enter Custom Docker Compose Path",
+						Command: "set_compose_file_custom",
+						Parameters: []*pb.ParameterInfo{
+							{
+								Name:        "custom_path",
+								Description: "Path to custom Docker Compose file",
+								Required:    true,
+							},
+						},
+					},
+					{
+						Label:   "Go Back",
+						Command: "go_back",
+					},
+				},
+			},
+		}, nil
 
-	// Get the menu to validate the command and its parameters
-	menuResp, err := m.GetPluginMenu(pluginName)
-	if err != nil {
-		return "", fmt.Errorf("failed to get plugin menu: %w", err)
-	}
+	case "set_compose_file_default":
+		return setComposeFile("Use default", "")
 
-	var menuOptions []gsplug.MenuOption
-	err = json.Unmarshal(menuResp.MenuData, &menuOptions)
-	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal menu data: %w", err)
-	}
+	case "set_compose_file_custom":
+		customPath, ok := req.Parameters["custom_path"]
+		if !ok || customPath == "" {
+			return &pb.CommandResponse{
+				Success:      false,
+				ErrorMessage: "Custom path is required for set_compose_file_custom command",
+			}, nil
+		}
+		return setComposeFile("Enter custom path", customPath)
 
-	var findCommandInMenu func([]gsplug.MenuOption, string) *gsplug.MenuOption
-	findCommandInMenu = func(options []gsplug.MenuOption, cmd string) *gsplug.MenuOption {
-		for _, opt := range options {
-			if opt.Command == cmd {
-				return &opt
-			}
-			if len(opt.SubMenu) > 0 {
-				if subOpt := findCommandInMenu(opt.SubMenu, cmd); subOpt != nil {
-					return subOpt
-				}
+	case "setup":
+		// Check for Docker Compose file before proceeding
+		if _, err := getComposePath(); err != nil {
+			return &pb.CommandResponse{
+				Success: false,
+				Result: `Before proceeding with setup, you need to configure a Docker Compose file.
+Please select 'Set Docker Compose File' from the Installation menu to continue.`,
+				ErrorMessage: "Docker Compose file required. Please select 'Set Docker Compose File' from the Installation menu.",
+				Navigation: &pb.NavigationContext{
+					CurrentMenu: "installation_menu",
+					ParentMenu:  "main",
+					AvailableCommands: []*pb.MenuItem{
+						{
+							Label:     "Set Docker Compose File",
+							Command:   "set_compose_file",
+							SubmenuId: "compose_file_menu",
+						},
+						{
+							Label:   "Go Back",
+							Command: "go_back",
+						},
+					},
+				},
+			}, nil
+		}
+
+		// Validate parameters
+		for _, param := range []string{"username", "password", "email"} {
+			if _, ok := req.Parameters[param]; !ok {
+				return &pb.CommandResponse{
+					Success:      false,
+					ErrorMessage: fmt.Sprintf("Missing required parameter: %s", param),
+				}, nil
 			}
 		}
-		return nil
-	}
 
-	selectedOption := findCommandInMenu(menuOptions, command)
-	if selectedOption == nil {
-		return "", fmt.Errorf("command not found in menu: %s", command)
-	}
+		return p.setupGitea(req)
 
-	// Validate that all required parameters are provided
-	for _, param := range selectedOption.Parameters {
-		if param.Required {
-			if _, ok := params[param.Name]; !ok {
-				return "", fmt.Errorf("missing required parameter: %s", param.Name)
+	case "generate_ssh_key":
+		// Validate parameters
+		for _, param := range []string{"username", "password", "email"} {
+			if _, ok := req.Parameters[param]; !ok {
+				return &pb.CommandResponse{
+					Success:      false,
+					ErrorMessage: fmt.Sprintf("Missing required parameter: %s", param),
+				}, nil
 			}
 		}
-	}
+		return generateAndUploadSSHKey(req)
 
-	// Execute the command with provided parameters
-	req := &pb.CommandRequest{
-		Command:    command,
-		Parameters: params,
-	}
+	case "start":
+		return runDockerCompose("up", "-d")
 
-	resp, err := plugin.sendRequest(2, req)
-	if err != nil {
-		return "", fmt.Errorf("error sending request to plugin: %w", err)
-	}
+	case "stop":
+		return runDockerCompose("down")
 
-	cmdResp, ok := resp.(*pb.CommandResponse)
-	if !ok {
-		return "", fmt.Errorf("unexpected response type: %T", resp)
-	}
+	case "restart":
+		return runDockerCompose("restart")
 
-	if !cmdResp.Success {
-		return "", fmt.Errorf("command failed: %s", cmdResp.ErrorMessage)
-	}
+	case "print_summary":
+		summary, err := printGiteaSummary(p.logger)
+		if err != nil {
+			return &pb.CommandResponse{
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("Failed to print Gitea summary: %v", err),
+			}, nil
+		}
+		return &pb.CommandResponse{
+			Success: true,
+			Result:  summary,
+		}, nil
 
-	return cmdResp.Result, nil
+	case "git_config_summary":
+		return gitConfigSummary()
+
+	case "delete_containers_images":
+		return deleteContainersAndImages()
+
+	case "delete_volumes":
+		return deleteVolumes()
+
+	case "go_back":
+		return &pb.CommandResponse{
+			Success: true,
+			Result:  "Returned to previous menu",
+			Navigation: &pb.NavigationContext{
+				ParentMenu: "main",
+			},
+		}, nil
+
+	// Backup Management Commands
+	case "configure_backup":
+		if err := validateBackupConfig(req.Parameters); err != nil {
+			return &pb.CommandResponse{
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("Invalid backup configuration: %v", err),
+			}, nil
+		}
+		return p.handleBackupCommands(req)
+
+	case "create_backup":
+		// Check if Docker Compose file exists before proceeding
+		if _, err := getComposePath(); err != nil {
+			return &pb.CommandResponse{
+				Success: false,
+				Result: `Before creating a backup, you need to configure a Docker Compose file.
+Please select 'Set Docker Compose File' from the Installation menu.`,
+				ErrorMessage: "Docker Compose file required for backup operations.",
+				Navigation: &pb.NavigationContext{
+					CurrentMenu: "installation_menu",
+					ParentMenu:  "main",
+					AvailableCommands: []*pb.MenuItem{
+						{
+							Label:     "Set Docker Compose File",
+							Command:   "set_compose_file",
+							SubmenuId: "compose_file_menu",
+						},
+					},
+				},
+			}, nil
+		}
+		return p.handleBackupCommands(req)
+
+	case "set_backup_schedule":
+		schedule, ok := req.Parameters["schedule"]
+		if !ok || schedule == "" {
+			return &pb.CommandResponse{
+				Success:      false,
+				ErrorMessage: "Backup schedule (cron expression) is required",
+			}, nil
+		}
+
+		// Check if Docker Compose file exists before proceeding
+		if _, err := getComposePath(); err != nil {
+			return &pb.CommandResponse{
+				Success: false,
+				Result: `Before setting a backup schedule, you need to configure a Docker Compose file.
+Please select 'Set Docker Compose File' from the Installation menu.`,
+				ErrorMessage: "Docker Compose file required for backup operations.",
+				Navigation: &pb.NavigationContext{
+					CurrentMenu: "installation_menu",
+					ParentMenu:  "main",
+					AvailableCommands: []*pb.MenuItem{
+						{
+							Label:     "Set Docker Compose File",
+							Command:   "set_compose_file",
+							SubmenuId: "compose_file_menu",
+						},
+					},
+				},
+			}, nil
+		}
+		return p.handleBackupCommands(req)
+
+	case "restore_backup":
+		backupFile, ok := req.Parameters["backup_file"]
+		if !ok || backupFile == "" {
+			return &pb.CommandResponse{
+				Success:      false,
+				ErrorMessage: "Backup file path is required",
+			}, nil
+		}
+
+		// Check if Docker Compose file exists before proceeding
+		if _, err := getComposePath(); err != nil {
+			return &pb.CommandResponse{
+				Success: false,
+				Result: `Before restoring a backup, you need to configure a Docker Compose file.
+Please select 'Set Docker Compose File' from the Installation menu.`,
+				ErrorMessage: "Docker Compose file required for backup operations.",
+				Navigation: &pb.NavigationContext{
+					CurrentMenu: "installation_menu",
+					ParentMenu:  "main",
+					AvailableCommands: []*pb.MenuItem{
+						{
+							Label:     "Set Docker Compose File",
+							Command:   "set_compose_file",
+							SubmenuId: "compose_file_menu",
+						},
+					},
+				},
+			}, nil
+		}
+		return p.handleBackupCommands(req)
+
+	case "view_backup_summary":
+		if _, err := getComposePath(); err != nil {
+			return &pb.CommandResponse{
+				Success: false,
+				Result: `Before viewing backup summary, you need to configure a Docker Compose file.
+Please select 'Set Docker Compose File' from the Installation menu.`,
+				ErrorMessage: "Docker Compose file required for backup operations.",
+				Navigation: &pb.NavigationContext{
+					CurrentMenu: "installation_menu",
+					ParentMenu:  "main",
+					AvailableCommands: []*pb.MenuItem{
+						{
+							Label:     "Set Docker Compose File",
+							Command:   "set_compose_file",
+							SubmenuId: "compose_file_menu",
+						},
+					},
+				},
+			}, nil
+		}
+		return p.handleBackupCommands(req)
+
+	default:
+		p.logger.Error("Unknown command received", "command", req.Command)
+		return &pb.CommandResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("Unknown command: %s", req.Command),
+		}, nil
+	}
 }
 
 func (m *Manager) promptForParameter(param gsplug.ParameterInfo) (string, error) {

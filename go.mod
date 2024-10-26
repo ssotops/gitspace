@@ -5,7 +5,7 @@ go 1.23.1
 require (
 	code.gitea.io/sdk/gitea v0.19.0
 	github.com/charmbracelet/bubbles v0.20.0
-	github.com/charmbracelet/bubbletea v1.1.1
+	github.com/charmbracelet/bubbletea v1.1.2
 	github.com/charmbracelet/huh v0.6.0
 	github.com/charmbracelet/lipgloss v0.13.1
 	github.com/charmbracelet/log v0.4.0
@@ -27,8 +27,8 @@ require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/catppuccin/go v0.2.0 // indirect
-	github.com/charmbracelet/x/ansi v0.3.2 // indirect
-	github.com/charmbracelet/x/exp/strings v0.0.0-20241022174419-46d9bb99a691 // indirect
+	github.com/charmbracelet/x/ansi v0.4.0 // indirect
+	github.com/charmbracelet/x/exp/strings v0.0.0-20241025155609-902b1d1de0be // indirect
 	github.com/charmbracelet/x/term v0.2.0 // indirect
 	github.com/cloudflare/circl v1.5.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.3.4 // indirect
@@ -71,4 +71,7 @@ require (
 
 exclude github.com/ssotops/gitspace/examples/plugins v0.0.0
 
-replace github.com/ssotops/gitspace/lib => ./lib
+replace (
+	github.com/ssotops/gitspace-plugin-sdk => ./gs/gitspace-plugin-sdk
+	github.com/ssotops/gitspace/lib => ./lib
+)
