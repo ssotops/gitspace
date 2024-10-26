@@ -43,9 +43,12 @@ fi
 
 # Update Gitspace dependencies
 log "Updating Gitspace dependencies..."
+# Update module path format to use github.com
 go get -u github.com/ssotops/gitspace-plugin-sdk
 go mod tidy
-go mod vendor  # Add this line
+
+# Update the replace directive if needed
+go mod edit -replace github.com/ssotops/gitspace-plugin-sdk=./gs/gitspace-plugin-sdk
 
 if [ $? -ne 0 ]; then
     error "Failed to update Gitspace dependencies"

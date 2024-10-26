@@ -447,40 +447,39 @@ func filterPlugins(plugins map[string]string) map[string]string {
 	return filtered
 }
 
-func executePluginCommand(plugin *Plugin, cmd string, params map[string]string) error {
-	resp, err := plugin.ExecuteCommand(cmd, params)
-	if err != nil {
-		return err
-	}
-
-	if !resp.Success {
-		if resp.Navigation != nil {
-			// Navigate to the indicated menu
-			if err := navigateToMenu(resp.Navigation.CurrentMenu); err != nil {
-				return fmt.Errorf("navigation failed: %v", err)
-			}
-			return fmt.Errorf(resp.ErrorMessage)
+func executePluginCommand(logger *logger.RateLimitedLogger, manager *Manager, selectedPlugin, selectedCommand string, parameters []gsplug.ParameterInfo) error {
+	params := make(map[string]string)
+	for _, param := range parameters {
+		var value string
+		prompt := fmt.Sprintf("%s (%s): ", param.Name, param.Description)
+		if param.Required {
+			prompt = fmt.Sprintf("%s (Required) ", prompt)
 		}
-		return fmt.Errorf("command failed: %s", resp.ErrorMessage)
+		err := huh.NewInput().
+			Title(prompt).
+			Value(&value).
+			Validate(func(s string) error {
+				if param.Required && s == "" {
+					return fmt.Errorf("this field is required")
+				}
+				return nil
+			}).
+			Run()
+		if err != nil {
+			return fmt.Errorf("error getting parameter input: %w", err)
+		}
+		if value != "" {
+			params[param.Name] = value
+		}
 	}
 
-	return nil
-}
-
-func navigateToMenu(menuId string) error {
-	// Find the menu options for the given menuId
-	options := findMenuOptions(menuId)
-	if options == nil {
-		return fmt.Errorf("menu not found: %s", menuId)
+	result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, params)
+	if err != nil {
+		return fmt.Errorf("error executing command: %w", err)
 	}
 
-	// Update the current menu context
-	currentMenu = menuId
-	menuStack = append(menuStack, menuId)
-
-	// Update the UI with the new options
-	updateMenuDisplay(options)
-
+	logger.Info("Command result", "result", result)
+	fmt.Printf("Result: %s\n", result)
 	return nil
 }
 
