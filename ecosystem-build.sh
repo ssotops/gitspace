@@ -17,7 +17,12 @@ error() {
     echo "✗ $1" >&2
 }
 
-# Build SDK
+# Clean build artifacts
+log "Cleaning build artifacts..."
+rm -f gitspace
+rm -rf vendor/
+
+# Build SDK with debug flags
 log "Building gitspace-plugin-sdk..."
 (
     cd ./gs/gitspace-plugin-sdk
@@ -29,11 +34,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Build Catalog Plugins
+# Build Catalog Plugins with debug flags
 log "Building gitspace-catalog plugins..."
 (
     cd ./gs/gitspace-catalog/plugins
-    ./build-all-plugins.sh
+    GODEBUG=x509roots=1 ./build-all-plugins.sh
 )
 
 if [ $? -ne 0 ]; then
@@ -43,11 +48,11 @@ fi
 
 # Update Gitspace dependencies
 log "Updating Gitspace dependencies..."
-# Update module path format to use github.com
 go get -u github.com/ssotops/gitspace-plugin-sdk
 go mod tidy
+go mod vendor
 
-# Update the replace directive if needed
+# Update the replace directive
 go mod edit -replace github.com/ssotops/gitspace-plugin-sdk=./gs/gitspace-plugin-sdk
 
 if [ $? -ne 0 ]; then
@@ -55,18 +60,24 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Build Gitspace
+# Build Gitspace with debug flags
 log "Building Gitspace..."
-go build -o gitspace .
+GODEBUG=x509roots=1 go build -o gitspace -gcflags="all=-N -l" .
 
 if [ $? -ne 0 ]; then
     error "Failed to build Gitspace"
     exit 1
 fi
 
+# Ensure proper permissions
+log "Setting executable permissions..."
+chmod +x gitspace
+chmod -R +x ./gs/gitspace-catalog/plugins/*/
+chmod -R +x ./gs/gitspace-plugin-sdk/
+
 # Run tests
 log "Running Gitspace tests..."
-go test ./...
+go test -v ./...
 
 if [ $? -ne 0 ]; then
     error "Some Gitspace tests failed"

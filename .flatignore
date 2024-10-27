@@ -2,3 +2,15 @@ gs.toml
 examples/templates
 examples/.git
 LICENSE
+src/assets
+bun.lockb
+*.svg
+*.ts
+.flat*
+.gitignore
+terraform/.terraform/**/*
+terraform/.terraform.lock.hcl
+terraform/tfplan
+logs/*
+.env.*
+go.sum

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/ssotops/gitspace-plugin-sdk/gsplug"
@@ -235,8 +236,12 @@ func HandleRunPlugin(logger *logger.RateLimitedLogger, manager *Manager) error {
 	return runPluginLoop(ctx, logger, manager, selectedPlugin)
 }
 
+// plugin_handler.go
+
+// plugin/handler.go
+
 func runPluginLoop(ctx context.Context, logger *logger.RateLimitedLogger, manager *Manager, selectedPlugin string) error {
-	// Set up a separate channel for interrupt signals
+	// Set up interrupt handling
 	interruptChan := make(chan os.Signal, 1)
 	signal.Notify(interruptChan, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(interruptChan)
@@ -246,170 +251,178 @@ func runPluginLoop(ctx context.Context, logger *logger.RateLimitedLogger, manage
 		return fmt.Errorf("plugin not found: %s", selectedPlugin)
 	}
 
-	// Use the plugin-specific logger
 	pluginLogger := plugin.Logger
-
 	var currentMenu []gsplug.MenuOption
 	menuStack := [][]gsplug.MenuOption{}
 
-	for {
-		// Check if the plugin is still running
-		if !manager.IsPluginRunning(selectedPlugin) {
-			pluginLogger.Error("Plugin has terminated unexpectedly", "plugin", selectedPlugin)
-			return fmt.Errorf("plugin %s has terminated unexpectedly", selectedPlugin)
+	// Helper function to refresh menu
+	refreshMenu := func() error {
+		menuResp, err := manager.GetPluginMenu(selectedPlugin)
+		if err != nil {
+			return fmt.Errorf("failed to get menu: %w", err)
 		}
 
-		// Create a channel for menu selection
-		menuDone := make(chan struct{})
+		var newMenu []gsplug.MenuOption
+		err = json.Unmarshal(menuResp.MenuData, &newMenu)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal menu data: %w", err)
+		}
+
+		currentMenu = newMenu
+		return nil
+	}
+
+	// Initial menu load
+	if err := refreshMenu(); err != nil {
+		return fmt.Errorf("failed to load initial menu: %w", err)
+	}
+
+	for {
+		// Check if plugin is still running
+		if !manager.IsPluginRunning(selectedPlugin) {
+			pluginLogger.Error("Plugin has terminated unexpectedly")
+			return fmt.Errorf("plugin terminated unexpectedly")
+		}
+
+		// Create menu options including navigation
+		options := make([]huh.Option[string], 0, len(currentMenu)+1)
+		for _, opt := range currentMenu {
+			options = append(options, huh.NewOption(opt.Label, opt.Command))
+		}
+
+		// Add navigation options
+		if len(menuStack) > 0 {
+			options = append(options, huh.NewOption("Go Back", "go_back"))
+		}
+		options = append(options, huh.NewOption("Exit Plugin", "exit"))
+
+		// Present menu to user
 		var selectedCommand string
+		err := huh.NewSelect[string]().
+			Title("Choose an action").
+			Options(options...).
+			Value(&selectedCommand).
+			Run()
 
-		// Run menu selection in a goroutine
-		go func() {
-			defer close(menuDone)
-
-			var err error
-			if len(currentMenu) == 0 {
-				// Get the plugin menu
-				pluginLogger.Debug("Getting menu for selected plugin", "plugin", selectedPlugin)
-				menuResp, err := manager.GetPluginMenu(selectedPlugin)
-				if err != nil {
-					pluginLogger.Error("Error getting plugin menu", "error", err)
-					return
-				}
-
-				pluginLogger.Debug("Received menu response", "dataSize", len(menuResp.MenuData))
-
-				err = json.Unmarshal(menuResp.MenuData, &currentMenu)
-				if err != nil {
-					pluginLogger.Error("Error unmarshalling menu data", "error", err)
-					return
-				}
+		if err != nil {
+			if err == huh.ErrUserAborted {
+				return nil
 			}
+			pluginLogger.Error("Menu selection error", "error", err)
+			continue
+		}
 
-			pluginLogger.Debug("Presenting menu options to user", "optionsCount", len(currentMenu))
-
-			// Present menu to user
-			options := make([]huh.Option[string], len(currentMenu))
-			for i, opt := range currentMenu {
-				options[i] = huh.NewOption(opt.Label, opt.Command)
-			}
+		// Handle navigation commands
+		switch selectedCommand {
+		case "exit":
+			return nil
+		case "go_back":
 			if len(menuStack) > 0 {
-				options = append(options, huh.NewOption("Go Back", "go_back"))
-			} else {
-				options = append(options, huh.NewOption("Exit plugin", "exit"))
+				currentMenu = menuStack[len(menuStack)-1]
+				menuStack = menuStack[:len(menuStack)-1]
+				continue
+			}
+			return nil
+		}
+
+		// Find selected menu option
+		var selectedOption *gsplug.MenuOption
+		var findOption func([]gsplug.MenuOption, string) *gsplug.MenuOption
+		findOption = func(menu []gsplug.MenuOption, cmd string) *gsplug.MenuOption {
+			for i, opt := range menu {
+				if opt.Command == cmd {
+					return &menu[i]
+				}
+				if len(opt.SubMenu) > 0 {
+					if subOpt := findOption(opt.SubMenu, cmd); subOpt != nil {
+						return subOpt
+					}
+				}
+			}
+			return nil
+		}
+
+		selectedOption = findOption(currentMenu, selectedCommand)
+		if selectedOption == nil {
+			pluginLogger.Error("Invalid command selected", "command", selectedCommand)
+			continue
+		}
+
+		// Handle submenu navigation
+		if len(selectedOption.SubMenu) > 0 {
+			menuStack = append(menuStack, currentMenu)
+			currentMenu = selectedOption.SubMenu
+			continue
+		}
+		// Collect parameters
+		params := make(map[string]string)
+		for _, param := range selectedOption.Parameters {
+			var value string
+			prompt := fmt.Sprintf("%s (%s)", param.Name, param.Description)
+			if param.Required {
+				prompt += " (Required)"
 			}
 
-			err = huh.NewSelect[string]().
-				Title("Choose an action").
-				Options(options...).
-				Value(&selectedCommand).
+			err := huh.NewInput().
+				Title(prompt).
+				Value(&value).
+				Validate(func(s string) error {
+					if param.Required && s == "" {
+						return fmt.Errorf("this field is required")
+					}
+					return nil
+				}).
 				Run()
 
 			if err != nil {
 				if err == huh.ErrUserAborted {
-					pluginLogger.Debug("User aborted menu selection")
-					selectedCommand = "exit"
-				} else {
-					pluginLogger.Error("Error running menu", "error", err)
+					pluginLogger.Info("User aborted parameter input")
+					break
 				}
-				return
+				pluginLogger.Error("Parameter input error", "error", err)
+				continue
 			}
-		}()
 
-		// Wait for either menu selection to complete, context cancellation, or interrupt signal
+			if value != "" {
+				params[param.Name] = value
+			}
+		}
+
+		// Execute command
+		result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, params)
+		if err != nil {
+			pluginLogger.Error("Command execution failed", "error", err)
+			fmt.Printf("Error: %v\n", err)
+
+			// Check for plugin termination
+			if !manager.IsPluginRunning(selectedPlugin) {
+				return fmt.Errorf("plugin terminated during command execution")
+			}
+		} else {
+			if result != "" {
+				pluginLogger.Info("Command executed successfully", "result", result)
+				fmt.Printf("Result: %s\n", result)
+			} else {
+				pluginLogger.Info("Command executed successfully")
+			}
+		}
+
+		// Refresh menu after command execution
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-interruptChan:
-			pluginLogger.Info("Received interrupt signal. Returning to previous menu...")
+			pluginLogger.Info("Received interrupt signal")
 			return nil
-		case <-menuDone:
-			// Menu selection completed
-			if selectedCommand == "exit" {
-				pluginLogger.Debug("User chose to exit plugin")
-				return nil
+		default:
+			if err := refreshMenu(); err != nil {
+				pluginLogger.Error("Failed to refresh menu", "error", err)
+				return fmt.Errorf("failed to refresh menu after command: %w", err)
 			}
-
-			if selectedCommand == "go_back" {
-				if len(menuStack) > 0 {
-					currentMenu = menuStack[len(menuStack)-1]
-					menuStack = menuStack[:len(menuStack)-1]
-					continue
-				} else {
-					pluginLogger.Debug("No previous menu, exiting plugin")
-					return nil
-				}
-			}
-
-			// Find the selected menu option
-			var findOption func([]gsplug.MenuOption, string) *gsplug.MenuOption
-			findOption = func(menu []gsplug.MenuOption, cmd string) *gsplug.MenuOption {
-				for i, opt := range menu {
-					if opt.Command == cmd {
-						return &menu[i]
-					}
-					if len(opt.SubMenu) > 0 {
-						if subOpt := findOption(opt.SubMenu, cmd); subOpt != nil {
-							return subOpt
-						}
-					}
-				}
-				return nil
-			}
-
-			selectedOption := findOption(currentMenu, selectedCommand)
-
-			if selectedOption != nil {
-				if len(selectedOption.SubMenu) > 0 {
-					menuStack = append(menuStack, currentMenu)
-					currentMenu = selectedOption.SubMenu
-					continue
-				}
-
-				// Collect parameters if the command requires them
-				params := make(map[string]string)
-				for _, param := range selectedOption.Parameters {
-					var value string
-					prompt := fmt.Sprintf("%s (%s): ", param.Name, param.Description)
-					if param.Required {
-						prompt = fmt.Sprintf("%s (Required) ", prompt)
-					}
-					err := huh.NewInput().
-						Title(prompt).
-						Value(&value).
-						Validate(func(s string) error {
-							if param.Required && s == "" {
-								return fmt.Errorf("this field is required")
-							}
-							return nil
-						}).
-						Run()
-					if err != nil {
-						pluginLogger.Error("Error getting parameter input", "error", err)
-						continue
-					}
-					if value != "" {
-						params[param.Name] = value
-					}
-				}
-
-				// Execute the selected command
-				pluginLogger.Debug("Executing command", "command", selectedCommand, "params", params)
-				result, err := manager.ExecuteCommand(selectedPlugin, selectedCommand, params)
-				if err != nil {
-					pluginLogger.Error("Error executing command", "error", err)
-					fmt.Printf("Error: %v\n", err)
-				} else {
-					pluginLogger.Info("Command executed successfully", "result", result)
-					fmt.Printf("Result: %s\n", result)
-				}
-			} else {
-				pluginLogger.Error("Selected command not found in menu options", "command", selectedCommand)
-			}
-
-			// Clear the current menu to fetch a fresh menu on the next iteration
-			currentMenu = nil
 		}
+
+		// Brief pause to allow user to read any command output
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -500,4 +513,19 @@ func createOptionsFromPlugins(plugins []string) []huh.Option[string] {
 		options[i] = huh.NewOption(plugin, plugin)
 	}
 	return options
+}
+
+func refreshMenu(manager *Manager, selectedPlugin string) ([]gsplug.MenuOption, error) {
+	menuResp, err := manager.GetPluginMenu(selectedPlugin)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get menu: %w", err)
+	}
+
+	var menu []gsplug.MenuOption
+	err = json.Unmarshal(menuResp.MenuData, &menu)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal menu data: %w", err)
+	}
+
+	return menu, nil
 }

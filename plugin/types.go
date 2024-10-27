@@ -2,9 +2,11 @@ package plugin
 
 import (
 	"bufio"
-	"github.com/ssotops/gitspace-plugin-sdk/logger"
 	"io"
 	"os/exec"
+	"sync"
+
+	"github.com/ssotops/gitspace-plugin-sdk/logger"
 )
 
 type GitspaceCatalog struct {
@@ -54,4 +56,7 @@ type Template struct {
 type bufferedWriteCloser struct {
 	*bufio.Writer
 	closer io.Closer
+	mu     sync.Mutex
+	closed bool
+	logger *logger.RateLimitedLogger // Make sure this field exists
 }
